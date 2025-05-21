@@ -413,23 +413,22 @@ def get_repository_summary_files(name):
     search_dirs = [repository_dir, output_dir]
 
     files = []
-    for d in search_dirs:
-        if not os.path.exists(d):
-            continue
-        for file_name in os.listdir(d):
-            if file_name.endswith('_summarized.txt'):
-                file_path = os.path.join(d, file_name)
-                if os.path.isfile(file_path):
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': 'txt'
-                    }
-                    files.append(file_info)
+    for file_name in os.listdir(repository_dir):
+        if '_summarized.txt' in file_name:
+            file_path = os.path.join(repository_dir, file_name)
+            if os.path.isfile(file_path):
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                # 获取文件信息
+                file_info = {
+                    'name': file_name,
+                    'path': file_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
+                    'type': 'txt'
+                }
+                
+                files.append(file_info)
     
     return files
 
@@ -459,24 +458,23 @@ def get_repository_qa_files(name):
     search_dirs = [repository_dir, output_dir]
 
     files = []
-    for d in search_dirs:
-        if not os.path.exists(d):
-            continue
-        for file_name in os.listdir(d):
-            if file_name.endswith('_qa.json') or file_name.endswith('_qa.csv') or '_qa_csv.csv' in file_name or '_qa_json.json' in file_name:
-                file_path = os.path.join(d, file_name)
-                if os.path.isfile(file_path):
-                    _, ext = os.path.splitext(file_name)
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': ext.lower()[1:]
-                    }
-                    files.append(file_info)
+    for file_name in os.listdir(repository_dir):
+        if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name:
+            file_path = os.path.join(repository_dir, file_name)
+            if os.path.isfile(file_path):
+                # 获取文件信息
+                _, ext = os.path.splitext(file_name)
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                file_info = {
+                    'name': file_name,
+                    'path': file_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
+                    'type': ext.lower()[1:]  # 去掉点号
+                }
+                
+                files.append(file_info)
     
     return files
 
