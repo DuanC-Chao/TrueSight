@@ -362,11 +362,13 @@ def get_repository_files(name, file_types=None, include_summarized=True, include
                     continue
                 
                 # 获取文件信息
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': ext.lower()[1:]  # 去掉点号
                 }
                 
@@ -387,27 +389,32 @@ def get_repository_summary_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 获取文件列表
+    from backend.src.utils.config_loader import get_config
+
+    cfg = get_config().get('processor', {})
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', cfg.get('summary_output_dir', 'summarizer_output'), name
+    )
+
     files = []
-    for file_name in os.listdir(repository_dir):
-        if '_summarized.txt' in file_name:
-            file_path = os.path.join(repository_dir, file_name)
-            if os.path.isfile(file_path):
-                # 获取文件信息
-                file_info = {
-                    'name': file_name,
-                    'path': file_path,
-                    'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
-                    'type': 'txt'
-                }
-                
-                files.append(file_info)
-    
+    if os.path.isdir(output_dir):
+        for file_name in os.listdir(output_dir):
+            if file_name.endswith('_summary.txt') or '_summarized.txt' in file_name:
+                file_path = os.path.join(output_dir, file_name)
+                if os.path.isfile(file_path):
+                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                    file_info = {
+                        'name': file_name,
+                        'path': file_path,
+                        'size': os.path.getsize(file_path),
+                        'modified': modified_time,
+                        'modified_time': modified_time,
+                        'type': 'txt'
+                    }
+
+                    files.append(file_info)
+
     return files
 
 def get_repository_qa_files(name):
@@ -423,28 +430,33 @@ def get_repository_qa_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 获取文件列表
+    from backend.src.utils.config_loader import get_config
+
+    cfg = get_config().get('processor', {})
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', cfg.get('qa_output_dir', 'qa_generator_output'), name
+    )
+
     files = []
-    for file_name in os.listdir(repository_dir):
-        if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name:
-            file_path = os.path.join(repository_dir, file_name)
-            if os.path.isfile(file_path):
-                # 获取文件信息
-                _, ext = os.path.splitext(file_name)
-                file_info = {
-                    'name': file_name,
-                    'path': file_path,
-                    'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
-                    'type': ext.lower()[1:]  # 去掉点号
-                }
-                
-                files.append(file_info)
-    
+    if os.path.isdir(output_dir):
+        for file_name in os.listdir(output_dir):
+            if file_name.endswith('_qa.csv') or file_name.endswith('_qa.json') or '_qa_' in file_name:
+                file_path = os.path.join(output_dir, file_name)
+                if os.path.isfile(file_path):
+                    _, ext = os.path.splitext(file_name)
+                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                    file_info = {
+                        'name': file_name,
+                        'path': file_path,
+                        'size': os.path.getsize(file_path),
+                        'modified': modified_time,
+                        'modified_time': modified_time,
+                        'type': ext.lower()[1:]
+                    }
+
+                    files.append(file_info)
+
     return files
 
 def update_repository_status(name, status):
