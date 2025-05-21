@@ -398,13 +398,15 @@ def get_repository_summary_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    # 可能的目录
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    repository_dir = os.path.join(base_dir, 'data', 'crawled_data', name)
-    summary_dir = os.path.join(base_dir, 'data', 'summarizer_output', name)
+    # 获取信息库目录
+    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                 'data', 'crawled_data', name)
+    summary_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                               'data', 'summarizer_output', name)
 
     files = []
-    for directory in [repository_dir, summary_dir]:
+    search_dirs = [repository_dir, summary_dir]
+    for directory in search_dirs:
         if not os.path.isdir(directory):
             continue
         for file_name in os.listdir(directory):
@@ -437,16 +439,18 @@ def get_repository_qa_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    repository_dir = os.path.join(base_dir, 'data', 'crawled_data', name)
-    qa_dir = os.path.join(base_dir, 'data', 'qa_generator_output', name)
+    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                 'data', 'crawled_data', name)
+    qa_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                          'data', 'qa_generator_output', name)
 
     files = []
-    for directory in [repository_dir, qa_dir]:
+    search_dirs = [repository_dir, qa_dir]
+    for directory in search_dirs:
         if not os.path.isdir(directory):
             continue
         for file_name in os.listdir(directory):
-            if '_qa_' in file_name or file_name.endswith('_qa.json') or file_name.endswith('_qa.csv'):
+            if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name or file_name.endswith('_qa.json'):
                 file_path = os.path.join(directory, file_name)
                 if os.path.isfile(file_path):
                     _, ext = os.path.splitext(file_name)
