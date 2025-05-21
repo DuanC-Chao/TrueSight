@@ -59,6 +59,9 @@ def _load_repositories():
             if os.path.exists(config_file):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     repo_config = json.load(f)
+                repo_config.setdefault('token_count_jina', 0)
+                repo_config.setdefault('token_count_gpt4o', 0)
+                repo_config.setdefault('token_count_deepseek', 0)
             else:
                 # 创建默认配置
                 repo_config = {
@@ -119,7 +122,10 @@ def _load_repositories():
                         }
                     },
                     'dataset_id': None,
-                    'status': 'incomplete'
+                    'status': 'incomplete',
+                    'token_count_jina': 0,
+                    'token_count_gpt4o': 0,
+                    'token_count_deepseek': 0
                 }
                 
                 # 保存配置
@@ -214,7 +220,10 @@ def create_repository(name, source='crawler', urls=None, config_override=None):
             }
         },
         'dataset_id': None,
-        'status': 'incomplete'
+        'status': 'incomplete',
+        'token_count_jina': 0,
+        'token_count_gpt4o': 0,
+        'token_count_deepseek': 0
     }
     
     # 如果是爬虫来源，记录URL

@@ -214,13 +214,13 @@ def calculate_tokens():
             return jsonify({'success': False, 'error': f"信息库不存在: {repository_name}"}), 404
         
         # 计算 Token 数量
-        task_id, token_count = processor_manager.start_token_calculation(repository_name)
+        task_id, token_counts = processor_manager.start_token_calculation(repository_name)
         
         return jsonify({
             'success': True,
             'task_id': task_id,
             'repository_name': repository_name,
-            'token_count': token_count
+            'token_counts': token_counts
         })
     
     except Exception as e:
