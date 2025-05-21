@@ -8,15 +8,42 @@ Token工具模块
 """
 
 import logging
+from typing import Union
+
 import tiktoken
 
-def count_tokens(text, model="gpt-3.5-turbo"):
+
+def get_tokenizer(model: str = "gpt-3.5-turbo"):
+    """根据模型名称返回对应的tokenizer。
+
+    Args:
+        model: 模型名称
+
+    Returns:
+        tiktoken.Encoding 实例
+    """
+    try:
+        if model.startswith("gpt-4"):
+            return tiktoken.encoding_for_model("gpt-4")
+        elif model.startswith("gpt-3.5"):
+            return tiktoken.encoding_for_model("gpt-3.5-turbo")
+        elif "qwen" in model.lower() or "deepseek" in model.lower() \
+                or "gemini" in model.lower() or "mistral" in model.lower():
+            # 这些模型均使用与 cl100k_base 兼容的编码
+            return tiktoken.encoding_for_model("cl100k_base")
+        else:
+            return tiktoken.get_encoding("cl100k_base")
+    except Exception as e:
+        logging.error(f"获取tokenizer失败: {str(e)}")
+        return tiktoken.get_encoding("cl100k_base")
+
+def count_tokens(text: str, tokenizer_or_model: Union[str, "tiktoken.Encoding"] = "gpt-3.5-turbo"):
     """
     计算文本的Token数量
     
     Args:
         text: 文本内容
-        model: 模型名称，用于选择合适的tokenizer
+        tokenizer_or_model: 可以是模型名称或已初始化的tokenizer
         
     Returns:
         token_count: Token数量
@@ -25,22 +52,11 @@ def count_tokens(text, model="gpt-3.5-turbo"):
         return 0
     
     try:
-        # 根据模型选择合适的编码器
-        if model.startswith("gpt-4"):
-            encoding = tiktoken.encoding_for_model("gpt-4")
-        elif model.startswith("gpt-3.5"):
-            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "qwen" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Qwen使用类似的编码
-        elif "deepseek" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # DeepSeek使用类似的编码
-        elif "gemini" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Gemini使用类似的编码
-        elif "mistral" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Mistral使用类似的编码
+        if hasattr(tokenizer_or_model, "encode"):
+            # 已经是tokenizer实例
+            encoding = tokenizer_or_model
         else:
-            # 默认使用cl100k_base编码
-            encoding = tiktoken.get_encoding("cl100k_base")
+            encoding = get_tokenizer(str(tokenizer_or_model))
         
         # 计算Token数量
         tokens = encoding.encode(text)

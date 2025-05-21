@@ -362,11 +362,13 @@ def get_repository_files(name, file_types=None, include_summarized=True, include
                     continue
                 
                 # 获取文件信息
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': ext.lower()[1:]  # 去掉点号
                 }
                 
@@ -397,12 +399,14 @@ def get_repository_summary_files(name):
         if '_summarized.txt' in file_name:
             file_path = os.path.join(repository_dir, file_name)
             if os.path.isfile(file_path):
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 # 获取文件信息
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': 'txt'
                 }
                 
@@ -435,11 +439,13 @@ def get_repository_qa_files(name):
             if os.path.isfile(file_path):
                 # 获取文件信息
                 _, ext = os.path.splitext(file_name)
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': ext.lower()[1:]  # 去掉点号
                 }
                 
