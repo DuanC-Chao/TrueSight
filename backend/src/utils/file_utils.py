@@ -50,6 +50,11 @@ def list_files(directory, extensions=None, name_filter=None):
     
     return files
 
+def read_file(file_path):
+    """Thin wrapper used by processor modules."""
+    return read_file_content(file_path)
+
+
 def read_file_content(file_path):
     """
     读取文件内容，支持txt、pdf、html格式
@@ -97,13 +102,28 @@ def read_pdf_content(file_path):
     """
     try:
         with open(file_path, 'rb') as f:
-            pdf_reader = PyPDF2.PdfReader(f)
+            try:
+                pdf_reader = PyPDF2.PdfReader(f)  # PyPDF2 >= 2
+                get_text = lambda page: page.extract_text()
+            except AttributeError:
+                pdf_reader = PyPDF2.PdfFileReader(f)  # type: ignore
+                get_text = lambda page: page.extractText()
+
             content = ""
-            
-            for page_num in range(len(pdf_reader.pages)):
-                page = pdf_reader.pages[page_num]
-                content += page.extract_text() + "\n\n"
-            
+            num_pages = len(getattr(pdf_reader, "pages", []))
+            if num_pages == 0 and hasattr(pdf_reader, "numPages"):
+                num_pages = pdf_reader.numPages
+
+            for page_num in range(num_pages):
+                if hasattr(pdf_reader, "pages"):
+                    page = pdf_reader.pages[page_num]
+                else:
+                    page = pdf_reader.getPage(page_num)
+                try:
+                    content += get_text(page) + "\n\n"
+                except Exception:
+                    pass
+
             return content
     
     except Exception as e:

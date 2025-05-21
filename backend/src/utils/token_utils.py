@@ -8,7 +8,51 @@ Token工具模块
 """
 
 import logging
+from functools import lru_cache
+
 import tiktoken
+from transformers import AutoTokenizer
+
+
+@lru_cache(maxsize=4)
+def get_tokenizer(model: str = "gpt-3.5-turbo"):
+    """Return a tokenizer instance for the given model.
+
+    The function tries to provide sensible defaults for several known
+    models. If a specific tokenizer cannot be loaded, it falls back to
+    ``cl100k_base`` from ``tiktoken`` so token counting can still
+    proceed.
+    """
+    name = (model or "").lower()
+    try:
+        if name.startswith("gpt-4") or name.startswith("gpt-3.5"):
+            try:
+                return tiktoken.encoding_for_model(model)
+            except Exception:
+                return tiktoken.get_encoding("cl100k_base")
+        if "gpt-4o" in name:
+            return tiktoken.get_encoding("cl100k_base")
+        if "deepseek" in name:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    "deepseek-ai/deepseek-llm-7b-base",
+                    trust_remote_code=True,
+                    use_fast=True,
+                )
+            except Exception as e:
+                logging.error(f"获取tokenizer失败: {e}")
+                return tiktoken.get_encoding("cl100k_base")
+        if "jina" in name:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    "xlm-roberta-base", use_fast=True
+                )
+            except Exception as e:
+                logging.error(f"获取tokenizer失败: {e}")
+                return tiktoken.get_encoding("cl100k_base")
+    except Exception as e:  # pragma: no cover - defensive
+        logging.error(f"获取tokenizer失败: {e}")
+    return tiktoken.get_encoding("cl100k_base")
 
 def count_tokens(text, model="gpt-3.5-turbo"):
     """
@@ -25,28 +69,16 @@ def count_tokens(text, model="gpt-3.5-turbo"):
         return 0
     
     try:
-        # 根据模型选择合适的编码器
-        if model.startswith("gpt-4"):
-            encoding = tiktoken.encoding_for_model("gpt-4")
-        elif model.startswith("gpt-3.5"):
-            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "qwen" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Qwen使用类似的编码
-        elif "deepseek" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # DeepSeek使用类似的编码
-        elif "gemini" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Gemini使用类似的编码
-        elif "mistral" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Mistral使用类似的编码
-        else:
-            # 默认使用cl100k_base编码
-            encoding = tiktoken.get_encoding("cl100k_base")
-        
-        # 计算Token数量
-        tokens = encoding.encode(text)
+        tokenizer = model
+        if isinstance(model, str):
+            tokenizer = get_tokenizer(model)
+
+        if hasattr(tokenizer, "encode"):
+            tokens = tokenizer.encode(text)
+        else:  # pragma: no cover - should not happen
+            tokens = tokenizer.tokenize(text)
+
         return len(tokens)
-    
     except Exception as e:
         logging.error(f"计算Token失败: {str(e)}")
-        # 备用方案：简单估算
-        return len(text.split()) * 1.3  # 粗略估计：单词数 * 1.3
+        return int(len(text.split()) * 1.3)
