@@ -8,6 +8,8 @@ Token工具模块
 """
 
 import logging
+from typing import Union
+
 import tiktoken
 
 _tokenizer_cache = {}

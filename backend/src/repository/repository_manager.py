@@ -414,7 +414,6 @@ def get_repository_summary_files(name):
                     }
 
                     files.append(file_info)
-
     return files
 
 def get_repository_qa_files(name):
