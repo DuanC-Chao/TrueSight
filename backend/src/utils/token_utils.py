@@ -12,57 +12,44 @@ from typing import Union
 
 import tiktoken
 
+_tokenizer_cache = {}
+
 
 def get_tokenizer(model: str = "gpt-3.5-turbo"):
-    """根据模型名称返回对应的tokenizer。
+    """Return a tokenizer for the given model name."""
+    if hasattr(model, "encode"):
+        return model
 
-    Args:
-        model: 模型名称
+    if model in _tokenizer_cache:
+        return _tokenizer_cache[model]
 
-    Returns:
-        tiktoken.Encoding 实例
-    """
     try:
         if model.startswith("gpt-4"):
-            return tiktoken.encoding_for_model("gpt-4")
+            tokenizer = tiktoken.encoding_for_model("gpt-4")
         elif model.startswith("gpt-3.5"):
-            return tiktoken.encoding_for_model("gpt-3.5-turbo")
+            tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
         elif "qwen" in model.lower() or "deepseek" in model.lower() \
                 or "gemini" in model.lower() or "mistral" in model.lower():
-            # 这些模型均使用与 cl100k_base 兼容的编码
-            return tiktoken.encoding_for_model("cl100k_base")
+            tokenizer = tiktoken.encoding_for_model("cl100k_base")
         else:
-            return tiktoken.get_encoding("cl100k_base")
-    except Exception as e:
-        logging.error(f"获取tokenizer失败: {str(e)}")
-        return tiktoken.get_encoding("cl100k_base")
+            tokenizer = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        tokenizer = tiktoken.get_encoding("cl100k_base")
 
-def count_tokens(text: str, tokenizer_or_model: Union[str, "tiktoken.Encoding"] = "gpt-3.5-turbo"):
-    """
-    计算文本的Token数量
-    
-    Args:
-        text: 文本内容
-        tokenizer_or_model: 可以是模型名称或已初始化的tokenizer
-        
-    Returns:
-        token_count: Token数量
-    """
+    _tokenizer_cache[model] = tokenizer
+    return tokenizer
+
+def count_tokens(text, model="gpt-3.5-turbo"):
+    """Return the number of tokens for ``text`` using the given model or tokenizer."""
+
     if not text:
         return 0
-    
+
     try:
-        if hasattr(tokenizer_or_model, "encode"):
-            # 已经是tokenizer实例
-            encoding = tokenizer_or_model
-        else:
-            encoding = get_tokenizer(str(tokenizer_or_model))
-        
-        # 计算Token数量
-        tokens = encoding.encode(text)
+        tokenizer = get_tokenizer(model)
+        tokens = tokenizer.encode(text)
         return len(tokens)
-    
     except Exception as e:
         logging.error(f"计算Token失败: {str(e)}")
-        # 备用方案：简单估算
-        return len(text.split()) * 1.3  # 粗略估计：单词数 * 1.3
+        # fallback: rough estimation
+        return int(len(text.split()) * 1.3)
