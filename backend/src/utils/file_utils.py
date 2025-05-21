@@ -50,6 +50,11 @@ def list_files(directory, extensions=None, name_filter=None):
     
     return files
 
+
+def read_file(file_path):
+    """Wrapper to read file content."""
+    return read_file_content(file_path)
+
 def read_file_content(file_path):
     """
     读取文件内容，支持txt、pdf、html格式
