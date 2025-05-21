@@ -1,0 +1,58 @@
+[
+  {
+    "id": "bd936066-6a6a-422a-a574-60cf28ee6f0d",
+    "timestamp": "2025-05-20T19:36:28.635145",
+    "task_type": "processor",
+    "repository_name": "test",
+    "error_message": "too many values to unpack (expected 2)",
+    "stack_trace": null
+  },
+  {
+    "id": "62e051bb-67c1-4001-bb5b-05bac5bce413",
+    "timestamp": "2025-05-20T19:36:35.996460",
+    "task_type": "processor",
+    "repository_name": "test",
+    "error_message": "start_summary_generation() takes 1 positional argument but 2 were given",
+    "stack_trace": null
+  },
+  {
+    "id": "6ca52a53-3ba3-4848-99a4-dd012bec0ee3",
+    "timestamp": "2025-05-20T19:37:11.952249",
+    "task_type": "processor",
+    "repository_name": "test",
+    "error_message": "start_qa_generation() takes 1 positional argument but 2 were given",
+    "stack_trace": null
+  },
+  {
+    "id": "7d52b4d5-37af-4bff-bc54-65ffdba18d22",
+    "timestamp": "2025-05-20T19:38:52.756204",
+    "task_type": "processor",
+    "repository_name": "test2",
+    "error_message": "too many values to unpack (expected 2)",
+    "stack_trace": null
+  },
+  {
+    "id": "664690f5-94cc-4726-8e42-005beb7e2487",
+    "timestamp": "2025-05-21T14:02:09.515810",
+    "task_type": "processor",
+    "repository_name": "test3",
+    "error_message": "start_summary_generation() takes 1 positional argument but 2 were given",
+    "stack_trace": null
+  },
+  {
+    "id": "bcdc4eb6-8266-43b8-bd08-4026557e368b",
+    "timestamp": "2025-05-21T14:56:39.562749",
+    "task_type": "processor",
+    "repository_name": "test",
+    "error_message": "too many values to unpack (expected 2)",
+    "stack_trace": null
+  },
+  {
+    "id": "4fe4d5e2-1923-4230-bd41-cbd2bb621295",
+    "timestamp": "2025-05-21T14:57:17.380347",
+    "task_type": "processor",
+    "repository_name": "test",
+    "error_message": "start_summary_generation() takes 1 positional argument but 2 were given",
+    "stack_trace": null
+  }
+]

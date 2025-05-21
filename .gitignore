@@ -1,0 +1,22 @@
+# 忽略 node_modules 文件夹
+node_modules/
+
+# 忽略打包产物
+dist/
+build/
+
+# 忽略日志文件
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 忽略环境变量文件
+.env
+
+# 忽略 IDE 配置（包括 PyCharm）
+.idea/
+.vscode/
+
+# 忽略操作系统生成的垃圾文件
+.DS_Store
+Thumbs.db

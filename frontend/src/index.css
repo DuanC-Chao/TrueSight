@@ -1,0 +1,109 @@
+/* 全局样式 */
+@import '~antd/dist/antd.css';
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f0f2f5;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* 扁平化风格 */
+.flat-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s;
+}
+
+.flat-card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* 渐变风格 */
+.gradient-primary {
+  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  color: white;
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+  color: white;
+}
+
+.gradient-warning {
+  background: linear-gradient(135deg, #faad14 0%, #ffc53d 100%);
+  color: white;
+}
+
+.gradient-error {
+  background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
+  color: white;
+}
+
+/* 信息库状态颜色 */
+.status-complete {
+  color: #52c41a;
+}
+
+.status-incomplete {
+  color: #faad14;
+}
+
+.status-error {
+  color: #ff4d4f;
+}
+
+/* 自动更新频率颜色 */
+.update-daily {
+  border-left: 4px solid #1890ff;
+}
+
+.update-weekly {
+  border-left: 4px solid #52c41a;
+}
+
+.update-monthly {
+  border-left: 4px solid #722ed1;
+}
+
+.update-yearly {
+  border-left: 4px solid #eb2f96;
+}
+
+/* 布局样式 */
+.main-layout {
+  min-height: 100vh;
+}
+
+.site-header {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  padding: 0 24px;
+}
+
+.site-content {
+  padding: 24px;
+  margin: 0;
+  min-height: 280px;
+}
+
+.site-footer {
+  text-align: center;
+  padding: 16px 50px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .site-content {
+    padding: 12px;
+  }
+}
