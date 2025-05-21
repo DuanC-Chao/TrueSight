@@ -59,6 +59,9 @@ def _load_repositories():
             if os.path.exists(config_file):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     repo_config = json.load(f)
+                repo_config.setdefault('token_count_jina', 0)
+                repo_config.setdefault('token_count_gpt4o', 0)
+                repo_config.setdefault('token_count_deepseek', 0)
             else:
                 # 创建默认配置
                 repo_config = {
@@ -119,7 +122,10 @@ def _load_repositories():
                         }
                     },
                     'dataset_id': None,
-                    'status': 'incomplete'
+                    'status': 'incomplete',
+                    'token_count_jina': 0,
+                    'token_count_gpt4o': 0,
+                    'token_count_deepseek': 0
                 }
                 
                 # 保存配置
@@ -214,7 +220,10 @@ def create_repository(name, source='crawler', urls=None, config_override=None):
             }
         },
         'dataset_id': None,
-        'status': 'incomplete'
+        'status': 'incomplete',
+        'token_count_jina': 0,
+        'token_count_gpt4o': 0,
+        'token_count_deepseek': 0
     }
     
     # 如果是爬虫来源，记录URL
@@ -389,11 +398,20 @@ def get_repository_summary_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 获取文件列表
+    # 原始信息库目录
+    repository_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', 'crawled_data', name
+    )
+
+    # 预处理输出目录
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', config.get('summary_output_dir', 'summarizer_output'), name
+    )
+
+    search_dirs = [repository_dir, output_dir]
+
     files = []
     for file_name in os.listdir(repository_dir):
         if '_summarized.txt' in file_name:
@@ -427,11 +445,18 @@ def get_repository_qa_files(name):
     if name not in repositories:
         raise ValueError(f"信息库不存在: {name}")
     
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 获取文件列表
+    repository_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', 'crawled_data', name
+    )
+
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', config.get('qa_output_dir', 'qa_generator_output'), name
+    )
+
+    search_dirs = [repository_dir, output_dir]
+
     files = []
     for file_name in os.listdir(repository_dir):
         if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name:
