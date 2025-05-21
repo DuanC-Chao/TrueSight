@@ -8,45 +8,71 @@ Token工具模块
 """
 
 import logging
-import tiktoken
+from functools import lru_cache
 
-def count_tokens(text, model="gpt-3.5-turbo"):
+import tiktoken
+from transformers import AutoTokenizer
+
+
+@lru_cache(maxsize=None)
+def get_tokenizer(model: str = "gpt-3.5-turbo"):
+    """Return a tokenizer instance for the given model name.
+
+    The function falls back to ``cl100k_base`` encoding if a specialised
+    tokenizer cannot be loaded. HuggingFace models are loaded lazily and
+    any failures will be logged and ignored.
     """
-    计算文本的Token数量
-    
-    Args:
-        text: 文本内容
-        model: 模型名称，用于选择合适的tokenizer
-        
-    Returns:
-        token_count: Token数量
+    if not model:
+        model = "gpt-3.5-turbo"
+
+    name = model.lower()
+
+    try:
+        if name.startswith("gpt-4") or name.startswith("gpt-3.5"):
+            # All current OpenAI ChatGPT models use cl100k_base
+            return tiktoken.get_encoding("cl100k_base")
+        if "deepseek" in name:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    "deepseek-ai/deepseek-llm-7b-base",
+                    trust_remote_code=True,
+                    use_fast=True,
+                )
+            except Exception as e:  # pragma: no cover - network in tests
+                logging.error(f"加载 DeepSeek tokenizer 失败: {e}")
+                return tiktoken.get_encoding("cl100k_base")
+        if "jina" in name:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    "xlm-roberta-base",
+                    use_fast=True,
+                )
+            except Exception as e:  # pragma: no cover - network in tests
+                logging.error(f"加载 Jina tokenizer 失败: {e}")
+                return tiktoken.get_encoding("cl100k_base")
+    except Exception as e:
+        logging.error(f"获取 tokenizer 失败: {e}")
+
+    return tiktoken.get_encoding("cl100k_base")
+
+def count_tokens(text, tokenizer_or_model="gpt-3.5-turbo"):
+    """Return the number of tokens in ``text``.
+
+    ``tokenizer_or_model`` can be either a model name or a tokenizer/encoding
+    instance returned by :func:`get_tokenizer`.
     """
     if not text:
         return 0
-    
+
+    # Determine tokenizer
+    if isinstance(tokenizer_or_model, str):
+        tokenizer = get_tokenizer(tokenizer_or_model)
+    else:
+        tokenizer = tokenizer_or_model
+
     try:
-        # 根据模型选择合适的编码器
-        if model.startswith("gpt-4"):
-            encoding = tiktoken.encoding_for_model("gpt-4")
-        elif model.startswith("gpt-3.5"):
-            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "qwen" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Qwen使用类似的编码
-        elif "deepseek" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # DeepSeek使用类似的编码
-        elif "gemini" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Gemini使用类似的编码
-        elif "mistral" in model.lower():
-            encoding = tiktoken.encoding_for_model("cl100k_base")  # Mistral使用类似的编码
-        else:
-            # 默认使用cl100k_base编码
-            encoding = tiktoken.get_encoding("cl100k_base")
-        
-        # 计算Token数量
-        tokens = encoding.encode(text)
+        tokens = tokenizer.encode(text)
         return len(tokens)
-    
-    except Exception as e:
-        logging.error(f"计算Token失败: {str(e)}")
-        # 备用方案：简单估算
-        return len(text.split()) * 1.3  # 粗略估计：单词数 * 1.3
+    except Exception as e:  # pragma: no cover - fallback
+        logging.error(f"计算Token失败: {e}")
+        return int(len(text.split()) * 1.3)
