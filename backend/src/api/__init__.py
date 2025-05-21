@@ -195,8 +195,14 @@ def stop_crawl(task_id):
 def calculate_tokens():
     """计算 Token 数量"""
     try:
-        data = request.json
-        repository_name = data.get('repository_name')
+        # 兼容直接传递字符串或JSON对象
+        data = request.get_json(silent=True)
+        if isinstance(data, dict):
+            repository_name = data.get('repository_name') or data.get('name')
+        elif isinstance(data, str):
+            repository_name = data
+        else:
+            repository_name = request.data.decode('utf-8').strip() if request.data else None
         
         # 验证参数
         if not repository_name:
@@ -226,9 +232,15 @@ def calculate_tokens():
 def generate_summary():
     """生成内容总结"""
     try:
-        data = request.json
-        repository_name = data.get('repository_name')
-        llm_config = data.get('llm_config')
+        data = request.get_json(silent=True)
+        llm_config = None
+        if isinstance(data, dict):
+            repository_name = data.get('repository_name') or data.get('name')
+            llm_config = data.get('llm_config')
+        elif isinstance(data, str):
+            repository_name = data
+        else:
+            repository_name = request.data.decode('utf-8').strip() if request.data else None
         
         # 验证参数
         if not repository_name:
@@ -257,9 +269,15 @@ def generate_summary():
 def generate_qa():
     """生成问答对"""
     try:
-        data = request.json
-        repository_name = data.get('repository_name')
-        llm_config = data.get('llm_config')
+        data = request.get_json(silent=True)
+        llm_config = None
+        if isinstance(data, dict):
+            repository_name = data.get('repository_name') or data.get('name')
+            llm_config = data.get('llm_config')
+        elif isinstance(data, str):
+            repository_name = data
+        else:
+            repository_name = request.data.decode('utf-8').strip() if request.data else None
         
         # 验证参数
         if not repository_name:
@@ -570,6 +588,26 @@ def import_repository_to_ragflow(name):
     
     except Exception as e:
         logging.error(f"导入信息库到RAGFlow失败: {str(e)}")
+        error_logs.add_error_log('ragflow', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/ragflow/sync/<name>', methods=['POST'])
+def sync_repository_with_ragflow(name):
+    """同步信息库到RAGFlow"""
+    try:
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+
+        result = ragflow_manager.sync_repository(name, repository)
+
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+
+    except Exception as e:
+        logging.error(f"同步信息库到RAGFlow失败: {str(e)}")
         error_logs.add_error_log('ragflow', str(e), name)
         return jsonify({'success': False, 'error': str(e)}), 500
 
