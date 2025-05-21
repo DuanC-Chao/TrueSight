@@ -8,48 +8,47 @@ Token工具模块
 """
 
 import logging
-from typing import Union
+from functools import lru_cache
 
 import tiktoken
+from transformers import AutoTokenizer
 
-_tokenizer_cache = {}
 
+@lru_cache(maxsize=None)
+def get_tokenizer(model: str):
+    """Return a tokenizer instance for the given model name."""
+    model_l = model.lower()
 
-def get_tokenizer(model: str = "gpt-3.5-turbo"):
-    """Return a tokenizer for the given model name."""
-    if hasattr(model, "encode"):
-        return model
-
-    if model in _tokenizer_cache:
-        return _tokenizer_cache[model]
+    if model_l in {"gpt-4o", "gpt4o"}:
+        return tiktoken.encoding_for_model("gpt-4o")
+    if "deepseek" in model_l:
+        return AutoTokenizer.from_pretrained(
+            "deepseek-ai/deepseek-llm-7b-base",
+            trust_remote_code=True,
+            use_fast=True,
+        )
+    if "jina" in model_l or "xlm-roberta" in model_l:
+        return AutoTokenizer.from_pretrained("xlm-roberta-base", use_fast=True)
 
     try:
-        if model.startswith("gpt-4"):
-            tokenizer = tiktoken.encoding_for_model("gpt-4")
-        elif model.startswith("gpt-3.5"):
-            tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "qwen" in model.lower() or "deepseek" in model.lower() \
-                or "gemini" in model.lower() or "mistral" in model.lower():
-            tokenizer = tiktoken.encoding_for_model("cl100k_base")
-        else:
-            tokenizer = tiktoken.get_encoding("cl100k_base")
+        return tiktoken.encoding_for_model(model)
     except Exception:
-        tokenizer = tiktoken.get_encoding("cl100k_base")
+        return tiktoken.get_encoding("cl100k_base")
 
-    _tokenizer_cache[model] = tokenizer
-    return tokenizer
 
-def count_tokens(text, model="gpt-3.5-turbo"):
-    """Return the number of tokens for ``text`` using the given model or tokenizer."""
-
+def count_tokens(text, tokenizer_or_model="gpt-3.5-turbo"):
+    """计算文本的Token数量."""
     if not text:
         return 0
 
     try:
-        tokenizer = get_tokenizer(model)
+        if hasattr(tokenizer_or_model, "encode"):
+            tokenizer = tokenizer_or_model
+        else:
+            tokenizer = get_tokenizer(str(tokenizer_or_model))
+
         tokens = tokenizer.encode(text)
         return len(tokens)
     except Exception as e:
         logging.error(f"计算Token失败: {str(e)}")
-        # fallback: rough estimation
         return int(len(text.split()) * 1.3)

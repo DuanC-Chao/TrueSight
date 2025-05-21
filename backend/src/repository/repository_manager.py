@@ -59,6 +59,9 @@ def _load_repositories():
             if os.path.exists(config_file):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     repo_config = json.load(f)
+                repo_config.setdefault('token_count_jina', 0)
+                repo_config.setdefault('token_count_gpt4o', 0)
+                repo_config.setdefault('token_count_deepseek', 0)
             else:
                 # 创建默认配置
                 repo_config = {
@@ -119,7 +122,10 @@ def _load_repositories():
                         }
                     },
                     'dataset_id': None,
-                    'status': 'incomplete'
+                    'status': 'incomplete',
+                    'token_count_jina': 0,
+                    'token_count_gpt4o': 0,
+                    'token_count_deepseek': 0
                 }
                 
                 # 保存配置
@@ -214,7 +220,10 @@ def create_repository(name, source='crawler', urls=None, config_override=None):
             }
         },
         'dataset_id': None,
-        'status': 'incomplete'
+        'status': 'incomplete',
+        'token_count_jina': 0,
+        'token_count_gpt4o': 0,
+        'token_count_deepseek': 0
     }
     
     # 如果是爬虫来源，记录URL
@@ -398,22 +407,23 @@ def get_repository_summary_files(name):
     )
 
     files = []
-    if os.path.isdir(output_dir):
-        for file_name in os.listdir(output_dir):
-            if file_name.endswith('_summary.txt') or '_summarized.txt' in file_name:
-                file_path = os.path.join(output_dir, file_name)
-                if os.path.isfile(file_path):
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': 'txt'
-                    }
-
-                    files.append(file_info)
+    for file_name in os.listdir(repository_dir):
+        if '_summarized.txt' in file_name:
+            file_path = os.path.join(repository_dir, file_name)
+            if os.path.isfile(file_path):
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                # 获取文件信息
+                file_info = {
+                    'name': file_name,
+                    'path': file_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
+                    'type': 'txt'
+                }
+                
+                files.append(file_info)
+  
     return files
 
 def get_repository_qa_files(name):
@@ -438,24 +448,24 @@ def get_repository_qa_files(name):
     )
 
     files = []
-    if os.path.isdir(output_dir):
-        for file_name in os.listdir(output_dir):
-            if file_name.endswith('_qa.csv') or file_name.endswith('_qa.json') or '_qa_' in file_name:
-                file_path = os.path.join(output_dir, file_name)
-                if os.path.isfile(file_path):
-                    _, ext = os.path.splitext(file_name)
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': ext.lower()[1:]
-                    }
-
-                    files.append(file_info)
-
+    for file_name in os.listdir(repository_dir):
+        if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name:
+            file_path = os.path.join(repository_dir, file_name)
+            if os.path.isfile(file_path):
+                # 获取文件信息
+                _, ext = os.path.splitext(file_name)
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                file_info = {
+                    'name': file_name,
+                    'path': file_path,
+                    'size': os.path.getsize(file_path),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
+                    'type': ext.lower()[1:]  # 去掉点号
+                }
+                
+                files.append(file_info)
+   
     return files
 
 def update_repository_status(name, status):
