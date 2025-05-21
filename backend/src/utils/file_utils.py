@@ -54,7 +54,6 @@ def read_file(file_path):
     """Thin wrapper used by processor modules."""
     return read_file_content(file_path)
 
-
 def read_file_content(file_path):
     """
     读取文件内容，支持txt、pdf、html格式
@@ -89,6 +88,11 @@ def read_file_content(file_path):
     except Exception as e:
         logging.error(f"读取文件失败: {file_path}, 错误: {str(e)}")
         return ""
+
+# 向后兼容的别名
+def read_file(file_path):
+    """读取文件内容的兼容函数"""
+    return read_file_content(file_path)
 
 def read_pdf_content(file_path):
     """

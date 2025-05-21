@@ -90,7 +90,11 @@ def start_token_calculation(repository_name):
     logging.info(f"Token计算任务 {task_id} 已启动，信息库: {repository_name}")
     
     # 返回任务ID和初始Token计数
-    return task_id, 0
+    return task_id, {
+        'token_count_jina': 0,
+        'token_count_gpt4o': 0,
+        'token_count_deepseek': 0,
+    }
 
 def _token_calculation_worker(task_id, repository_name):
     """
@@ -116,48 +120,48 @@ def _token_calculation_worker(task_id, repository_name):
         with process_lock:
             process_status[task_id]['total_files'] = len(files)
         
-        # 计算总Token数
-        total_tokens = 0
-        processed_files = 0
-        
-        # 创建Token计算器
-        token_model = config.get('token_model', 'gpt-3.5-turbo')
-        tokenizer = token_utils.get_tokenizer(token_model)
-        
+        # 为多种模型准备tokenizer
+        tokenizers = {
+            'token_count_gpt4o': token_utils.get_tokenizer('gpt-4o'),
+            'token_count_deepseek': token_utils.get_tokenizer('deepseek'),
+            'token_count_jina': token_utils.get_tokenizer('jina'),
+        }
+
+        token_counts = {k: 0 for k in tokenizers}
+
         # 创建Token跟踪文件
-        token_tracker_path = os.path.join(repository_dir, 'token_tracker.txt')
+        token_tracker_paths = {
+            k: os.path.join(repository_dir, f"{k}.txt") for k in tokenizers
+        }
         
         # 处理每个文件
+        processed_files = 0
         for file_path in files:
             try:
-                # 读取文件内容
                 content = file_utils.read_file(file_path)
-                
-                # 计算Token数
-                tokens = token_utils.count_tokens(content, tokenizer)
-                total_tokens += tokens
-                
-                # 记录文件Token数
-                with open(token_tracker_path, 'a', encoding='utf-8') as f:
-                    f.write(f"{os.path.basename(file_path)}: {tokens}\n")
-                
-                # 更新处理进度
+
+                for key, tokenizer in tokenizers.items():
+                    tokens = token_utils.count_tokens(content, tokenizer)
+                    token_counts[key] += tokens
+                    with open(token_tracker_paths[key], 'a', encoding='utf-8') as f:
+                        f.write(f"{os.path.basename(file_path)}: {tokens}\n")
+
                 processed_files += 1
                 with process_lock:
                     process_status[task_id]['processed_files'] = processed_files
-                    process_status[task_id]['total_tokens'] = total_tokens
-            
+                    process_status[task_id]['total_tokens'] = sum(token_counts.values())
+
             except Exception as e:
                 logging.error(f"处理文件失败: {file_path}, 错误: {str(e)}")
-        
-        # 记录总Token数
-        with open(token_tracker_path, 'a', encoding='utf-8') as f:
-            f.write(f"\n总Token数: {total_tokens}\n")
-        
+
+        for key, count in token_counts.items():
+            with open(token_tracker_paths[key], 'a', encoding='utf-8') as f:
+                f.write(f"\n总Token数: {count}\n")
+
         # 更新信息库的Token计数
         try:
             repository_manager.update_repository(repository_name, {
-                'token_count': total_tokens,
+                **token_counts,
                 'updated_at': datetime.now().isoformat()
             })
         except Exception as e:
@@ -168,7 +172,9 @@ def _token_calculation_worker(task_id, repository_name):
             process_status[task_id]['status'] = 'completed'
             process_status[task_id]['end_time'] = datetime.now().isoformat()
         
-        logging.info(f"Token计算任务 {task_id} 已完成，信息库: {repository_name}, 总Token数: {total_tokens}")
+        logging.info(
+            f"Token计算任务 {task_id} 已完成，信息库: {repository_name}, 总Token数: {sum(token_counts.values())}"
+        )
     
     except Exception as e:
         # 更新任务状态为失败

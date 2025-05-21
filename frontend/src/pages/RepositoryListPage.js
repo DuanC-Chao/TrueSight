@@ -242,7 +242,15 @@ const RepositoryListPage = () => {
                   </div>
                   <div>
                     <Text type="secondary">
-                      {repository.token_count ? `${repository.token_count.toLocaleString()} tokens` : '未计算Token'}
+                      {`JinaEmbedding: ${repository.token_count_jina ? repository.token_count_jina.toLocaleString() : '未计算'}`}
+                    </Text>
+                    <br />
+                    <Text type="secondary">
+                      {`GPT4o: ${repository.token_count_gpt4o ? repository.token_count_gpt4o.toLocaleString() : '未计算'}`}
+                    </Text>
+                    <br />
+                    <Text type="secondary">
+                      {`Deepseek: ${repository.token_count_deepseek ? repository.token_count_deepseek.toLocaleString() : '未计算'}`}
                     </Text>
                   </div>
                   {repository.direct_import && (
