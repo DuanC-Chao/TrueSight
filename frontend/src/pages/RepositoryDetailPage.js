@@ -538,7 +538,9 @@ const RepositoryDetailPage = () => {
           <Descriptions.Item label="问答对状态">{getQAStatusTag()}</Descriptions.Item>
           <Descriptions.Item label="来源">{getSourceTag(repository.source)}</Descriptions.Item>
           <Descriptions.Item label="更新方式">{getAutoUpdateTag(repository)}</Descriptions.Item>
-          <Descriptions.Item label="Token数量">{repository.token_count ? repository.token_count.toLocaleString() : '未计算'}</Descriptions.Item>
+          <Descriptions.Item label="Token数量-JinaEmbedding">{repository.token_count_jina ? repository.token_count_jina.toLocaleString() : '未计算'}</Descriptions.Item>
+          <Descriptions.Item label="Token数量-GPT4o">{repository.token_count_gpt4o ? repository.token_count_gpt4o.toLocaleString() : '未计算'}</Descriptions.Item>
+          <Descriptions.Item label="Token数量-Deepseek">{repository.token_count_deepseek ? repository.token_count_deepseek.toLocaleString() : '未计算'}</Descriptions.Item>
           <Descriptions.Item label="直接入库">{repository.direct_import ? '是' : '否'}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{repository.created_at || '-'}</Descriptions.Item>
           <Descriptions.Item label="上次更新">{repository.updated_at || '-'}</Descriptions.Item>

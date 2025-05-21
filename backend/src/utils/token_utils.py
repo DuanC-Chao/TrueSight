@@ -13,7 +13,6 @@ from functools import lru_cache
 import tiktoken
 from transformers import AutoTokenizer
 
-
 @lru_cache(maxsize=None)
 def get_tokenizer(model: str = "gpt-3.5-turbo"):
     """Return a tokenizer instance for the given model name.
