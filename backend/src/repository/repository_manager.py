@@ -59,6 +59,9 @@ def _load_repositories():
             if os.path.exists(config_file):
                 with open(config_file, 'r', encoding='utf-8') as f:
                     repo_config = json.load(f)
+                repo_config.setdefault('token_count_jina', 0)
+                repo_config.setdefault('token_count_gpt4o', 0)
+                repo_config.setdefault('token_count_deepseek', 0)
             else:
                 # 创建默认配置
                 repo_config = {
@@ -119,7 +122,10 @@ def _load_repositories():
                         }
                     },
                     'dataset_id': None,
-                    'status': 'incomplete'
+                    'status': 'incomplete',
+                    'token_count_jina': 0,
+                    'token_count_gpt4o': 0,
+                    'token_count_deepseek': 0
                 }
                 
                 # 保存配置
@@ -214,7 +220,10 @@ def create_repository(name, source='crawler', urls=None, config_override=None):
             }
         },
         'dataset_id': None,
-        'status': 'incomplete'
+        'status': 'incomplete',
+        'token_count_jina': 0,
+        'token_count_gpt4o': 0,
+        'token_count_deepseek': 0
     }
     
     # 如果是爬虫来源，记录URL
@@ -362,11 +371,13 @@ def get_repository_files(name, file_types=None, include_summarized=True, include
                     continue
                 
                 # 获取文件信息
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': ext.lower()[1:]  # 去掉点号
                 }
                 
@@ -397,12 +408,14 @@ def get_repository_summary_files(name):
         if '_summarized.txt' in file_name:
             file_path = os.path.join(repository_dir, file_name)
             if os.path.isfile(file_path):
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 # 获取文件信息
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': 'txt'
                 }
                 
@@ -435,11 +448,13 @@ def get_repository_qa_files(name):
             if os.path.isfile(file_path):
                 # 获取文件信息
                 _, ext = os.path.splitext(file_name)
+                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
                 file_info = {
                     'name': file_name,
                     'path': file_path,
                     'size': os.path.getsize(file_path),
-                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    'modified': modified_time,
+                    'modified_time': modified_time,
                     'type': ext.lower()[1:]  # 去掉点号
                 }
                 
