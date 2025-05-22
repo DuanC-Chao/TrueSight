@@ -89,18 +89,6 @@ export const getCrawlStatus = (taskId) => {
   return api.get(`/crawler/status/${taskId}`);
 };
 
-export const pauseCrawl = (taskId) => {
-  return api.post(`/crawler/pause/${taskId}`);
-};
-
-export const resumeCrawl = (taskId) => {
-  return api.post(`/crawler/resume/${taskId}`);
-};
-
-export const stopCrawl = (taskId) => {
-  return api.post(`/crawler/stop/${taskId}`);
-};
-
 // 预处理相关
 export const calculateTokens = (data) => {
   return api.post('/processor/token/calculate', data);

@@ -1,721 +1,231 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 """
-信息库管理器模块
+file_utils.py
 
-本模块负责管理信息库，包括创建、查询、更新和删除信息库，以及信息库配置管理。
+增强后的文件工具模块。
+
+更新内容
+--------
+1. **新增 .xlsx 支持** —— 通过 `openpyxl` 解析 Excel 工作簿。
+2. **保留向后兼容别名** —— 重新加入 `read_file_content()`，避免旧代码引用失效。
+3. **list_files 改进**
+   * 扩展名大小写不敏感；
+   * 新增 `skip_hidden` 参数忽略隐藏文件/目录；
+   * `extensions=None` 时返回全部文件。
+4. **统一错误处理 & 记录** —— 更细粒度的异常捕获与日志。
+5. **其他**
+   * `ensure_directory` 对空路径做校验；
+   * 模块顶层导出 `__all__`；
+   * 对 HTML / PDF 解析兼容旧版 `PyPDF2`。
+
+依赖
+----
+```bash
+pip install openpyxl html2text PyPDF2 beautifulsoup4
+```
 """
+from __future__ import annotations
 
 import os
-import json
+import hashlib
 import logging
-import shutil
-from datetime import datetime
+from typing import List, Optional
 
-# 导入工具模块
-from backend.src.utils import file_utils
+import PyPDF2  # type: ignore
+import html2text  # type: ignore
+from bs4 import BeautifulSoup  # type: ignore
 
-# 全局配置
-config = {}
-# 信息库列表
-repositories = {}
+# Excel 解析依赖
+try:
+    import openpyxl  # type: ignore
+except ImportError:  # pragma: no cover – graceful degradation
+    openpyxl = None
+    logging.warning("openpyxl 未安装，.xlsx 文件读取功能不可用。")
 
-def init(app_config):
-    """
-    初始化信息库管理器
-    
+# ---------------------------------------------------------------------------
+# 公共工具函数
+# ---------------------------------------------------------------------------
+
+SUPPORTED_EXTS = {".txt", ".pdf", ".html", ".htm", ".xlsx"}
+
+
+def list_files(
+    directory: str,
+    extensions: Optional[List[str]] = None,
+    name_filter: Optional[str] = None,
+    skip_hidden: bool = True,
+) -> List[str]:
+    """递归获取目录下的文件列表。
+
     Args:
-        app_config: 应用配置
-    """
-    global config
-    
-    # 合并应用配置
-    if 'repository' in app_config:
-        config.update(app_config['repository'])
-    
-    # 加载现有信息库
-    _load_repositories()
-    
-    logging.info("信息库管理器初始化完成")
+        directory: 根目录路径。
+        extensions: 允许的文件扩展名列表（带点，例如 [".txt", ".pdf"]）。若为 *None*，则不过滤。
+        name_filter: 仅当文件 **名**（不含路径）包含该子串时保留。
+        skip_hidden: 为 *True* 时忽略以点开头的隐藏文件 / 目录。
 
-def _load_repositories():
-    """加载现有信息库"""
-    global repositories
-    
-    # 获取信息库根目录
-    repository_root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                  'data', 'crawled_data')
-    
-    # 创建目录（如果不存在）
-    os.makedirs(repository_root, exist_ok=True)
-    
-    # 遍历目录
-    for name in os.listdir(repository_root):
-        repo_dir = os.path.join(repository_root, name)
-        if os.path.isdir(repo_dir):
-            # 加载信息库配置
-            config_file = os.path.join(repo_dir, 'repository_config.json')
-            if os.path.exists(config_file):
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    repo_config = json.load(f)
-                repo_config.setdefault('token_count_jina', 0)
-                repo_config.setdefault('token_count_gpt4o', 0)
-                repo_config.setdefault('token_count_deepseek', 0)
-            else:
-                # 创建默认配置
-                repo_config = {
-                    'name': name,
-                    'created_at': datetime.now().isoformat(),
-                    'updated_at': datetime.now().isoformat(),
-                    'source': 'unknown',
-                    'auto_update': False,
-                    'update_frequency': None,
-                    'direct_import': False,
-                    'embedding_model': 'jina-embeddings-v3',
-                    'chunk_method': 'naive',
-                    'parser_config': {
-                        'chunk_token_num': 128,
-                        'delimiter': '\\n!?;。；！？',
-                        'html4excel': False,
-                        'layout_recognize': True,
-                        'raptor': {
-                            'use_raptor': False
-                        }
-                    },
-                    'file_type_mapping': {
-                        '.txt': {
-                            'chunk_method': 'naive',
-                            'parser_config': {
-                                'chunk_token_num': 128,
-                                'delimiter': '\\n!?;。；！？',
-                                'html4excel': False,
-                                'layout_recognize': True,
-                                'raptor': {
-                                    'use_raptor': False
-                                }
-                            }
-                        },
-                        '.pdf': {
-                            'chunk_method': 'naive',
-                            'parser_config': {
-                                'chunk_token_num': 128,
-                                'delimiter': '\\n!?;。；！？',
-                                'html4excel': False,
-                                'layout_recognize': True,
-                                'raptor': {
-                                    'use_raptor': False
-                                }
-                            }
-                        },
-                        '.html': {
-                            'chunk_method': 'naive',
-                            'parser_config': {
-                                'chunk_token_num': 128,
-                                'delimiter': '\\n!?;。；！？',
-                                'html4excel': False,
-                                'layout_recognize': True,
-                                'raptor': {
-                                    'use_raptor': False
-                                }
-                            }
-                        }
-                    },
-                    'dataset_id': None,
-                    'status': 'incomplete',
-                    'token_count_jina': 0,
-                    'token_count_gpt4o': 0,
-                    'token_count_deepseek': 0
-                }
-                
-                # 保存配置
-                with open(config_file, 'w', encoding='utf-8') as f:
-                    json.dump(repo_config, f, ensure_ascii=False, indent=2)
-            
-            # 添加到信息库列表
-            repositories[name] = repo_config
-
-def create_repository(name, source='crawler', urls=None, config_override=None):
-    """
-    创建信息库
-    
-    Args:
-        name: 信息库名称
-        source: 信息库来源（crawler/upload）
-        urls: 爬取URL列表（仅当source为crawler时有效）
-        config_override: 配置覆盖
-        
     Returns:
-        repository: 信息库配置
+        收集到的文件绝对路径列表。
     """
-    global repositories
-    
-    # 检查信息库是否已存在
-    if name in repositories:
-        raise ValueError(f"信息库已存在: {name}")
-    
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 创建目录
-    os.makedirs(repository_dir, exist_ok=True)
-    
-    # 创建默认配置
-    repository_config = {
-        'name': name,
-        'created_at': datetime.now().isoformat(),
-        'updated_at': datetime.now().isoformat(),
-        'source': source,
-        'auto_update': False,
-        'update_frequency': None,
-        'direct_import': False,
-        'embedding_model': 'jina-embeddings-v3',
-        'chunk_method': 'naive',
-        'parser_config': {
-            'chunk_token_num': 128,
-            'delimiter': '\\n!?;。；！？',
-            'html4excel': False,
-            'layout_recognize': True,
-            'raptor': {
-                'use_raptor': False
-            }
-        },
-        'file_type_mapping': {
-            '.txt': {
-                'chunk_method': 'naive',
-                'parser_config': {
-                    'chunk_token_num': 128,
-                    'delimiter': '\\n!?;。；！？',
-                    'html4excel': False,
-                    'layout_recognize': True,
-                    'raptor': {
-                        'use_raptor': False
-                    }
-                }
-            },
-            '.pdf': {
-                'chunk_method': 'naive',
-                'parser_config': {
-                    'chunk_token_num': 128,
-                    'delimiter': '\\n!?;。；！？',
-                    'html4excel': False,
-                    'layout_recognize': True,
-                    'raptor': {
-                        'use_raptor': False
-                    }
-                }
-            },
-            '.html': {
-                'chunk_method': 'naive',
-                'parser_config': {
-                    'chunk_token_num': 128,
-                    'delimiter': '\\n!?;。；！？',
-                    'html4excel': False,
-                    'layout_recognize': True,
-                    'raptor': {
-                        'use_raptor': False
-                    }
-                }
-            }
-        },
-        'dataset_id': None,
-        'status': 'incomplete',
-        'token_count_jina': 0,
-        'token_count_gpt4o': 0,
-        'token_count_deepseek': 0
+    files: List[str] = []
+
+    if not os.path.exists(directory):
+        logging.warning("目录不存在: %s", directory)
+        return files
+
+    # 构造扩展名集合，统一为小写
+    ext_set = {ext.lower() for ext in extensions} if extensions else None
+
+    for root, dirnames, filenames in os.walk(directory):
+        if skip_hidden:
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            filenames = [f for f in filenames if not f.startswith(".")]
+
+        for filename in filenames:
+            if name_filter and name_filter not in filename:
+                continue
+
+            ext = os.path.splitext(filename)[1].lower()
+            if ext_set is not None and ext not in ext_set:
+                continue
+
+            files.append(os.path.join(root, filename))
+
+    return files
+
+
+# ---------------------------------------------------------------------------
+# 统一的文件读取入口
+# ---------------------------------------------------------------------------
+
+def read_file(file_path: str) -> str:  # noqa: D401 – simple description is fine
+    """将各种受支持格式的文件读取为纯文本。"""
+    if not os.path.exists(file_path):
+        logging.error("文件不存在: %s", file_path)
+        return ""
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    reader_map = {
+        ".txt": _read_txt,
+        ".pdf": _read_pdf,
+        ".html": _read_html,
+        ".htm": _read_html,
+        ".xlsx": _read_xlsx,
     }
-    
-    # 如果是爬虫来源，记录URL
-    if source == 'crawler' and urls:
-        repository_config['urls'] = urls
-    
-    # 应用配置覆盖
-    if config_override:
-        repository_config.update(config_override)
-    
-    # 保存配置
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository_config, f, ensure_ascii=False, indent=2)
-    
-    # 添加到信息库列表
-    repositories[name] = repository_config
-    
-    logging.info(f"创建信息库: {name}, 来源: {source}")
-    
-    return repository_config
 
-def get_repository(name):
-    """
-    获取信息库
-    
-    Args:
-        name: 信息库名称
-        
-    Returns:
-        repository: 信息库配置
-    """
-    if name in repositories:
-        return repositories[name]
-    else:
-        return None
+    reader = reader_map.get(ext)
+    if reader is None:
+        logging.warning("不支持的文件格式: %s", ext)
+        return ""
 
-def get_all_repositories():
-    """
-    获取所有信息库
-    
-    Returns:
-        repositories: 信息库列表
-    """
-    return list(repositories.values())
+    try:
+        return reader(file_path)
+    except Exception as exc:  # pragma: no cover – top-level catch
+        logging.error("读取文件失败: %s | %s", file_path, exc)
+        return ""
 
-def update_repository(name, updates):
-    """
-    更新信息库
-    
-    Args:
-        name: 信息库名称
-        updates: 更新内容
-        
-    Returns:
-        repository: 更新后的信息库配置
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库配置
-    repository = repositories[name]
-    
-    # 应用更新
-    for key, value in updates.items():
-        if key != 'name':  # 不允许修改名称
-            repository[key] = value
-    
-    # 更新时间
-    repository['updated_at'] = datetime.now().isoformat()
-    
-    # 保存配置
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository, f, ensure_ascii=False, indent=2)
-    
-    logging.info(f"更新信息库: {name}")
-    
-    return repository
 
-def delete_repository(name):
-    """
-    删除信息库
-    
-    Args:
-        name: 信息库名称
-        
-    Returns:
-        success: 是否成功
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 删除目录
-    shutil.rmtree(repository_dir)
-    
-    # 从列表中移除
-    del repositories[name]
-    
-    logging.info(f"删除信息库: {name}")
-    
-    return True
+def read_file_content(file_path: str) -> str:  # noqa: D401 – backward‑compat alias
+    """向后兼容别名，等价于 :func:`read_file`. 保留以防旧代码直接调用。"""
+    return read_file(file_path)
 
-def get_repository_files(name, file_types=None, include_summarized=True, include_qa=True):
-    """
-    获取信息库文件列表
-    
-    Args:
-        name: 信息库名称
-        file_types: 文件类型列表
-        include_summarized: 是否包含总结文件
-        include_qa: 是否包含问答文件
-        
-    Returns:
-        files: 文件列表
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    
-    # 设置文件类型
-    if file_types is None:
-        file_types = ['.txt', '.pdf', '.html']
-    
-    # 获取文件列表
-    files = []
-    for file_name in os.listdir(repository_dir):
-        file_path = os.path.join(repository_dir, file_name)
-        if os.path.isfile(file_path):
-            # 检查文件类型
-            _, ext = os.path.splitext(file_name)
-            if ext.lower() in file_types:
-                # 检查是否是总结文件或问答文件
-                if (not include_summarized and '_summarized' in file_name) or \
-                   (not include_qa and '_qa_' in file_name):
-                    continue
-                
-                # 获取文件信息
-                modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                file_info = {
-                    'name': file_name,
-                    'path': file_path,
-                    'size': os.path.getsize(file_path),
-                    'modified': modified_time,
-                    'modified_time': modified_time,
-                    'type': ext.lower()[1:]  # 去掉点号
-                }
-                
-                files.append(file_info)
-    
-    return files
 
-def get_repository_summary_files(name):
-    """
-    获取信息库总结文件列表
-    
-    Args:
-        name: 信息库名称
-        
-    Returns:
-        files: 文件列表
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库目录
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                 'data', 'crawled_data', name)
-    summary_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                               'data', 'summarizer_output', name)
+# ---------------------------------------------------------------------------
+# 各格式文件专用读取函数
+# ---------------------------------------------------------------------------
 
-    files = []
-    search_dirs = [repository_dir, summary_dir]
-    for directory in search_dirs:
-        if not os.path.isdir(directory):
-            continue
-        for file_name in os.listdir(directory):
-            if '_summarized.txt' in file_name or file_name.endswith('_summary.txt'):
-                file_path = os.path.join(directory, file_name)
-                if os.path.isfile(file_path):
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': 'txt'
-                    }
-                    files.append(file_info)
-    
-    return files
+def _read_txt(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
+        return fp.read()
 
-def get_repository_qa_files(name):
-    """
-    获取信息库问答文件列表
-    
-    Args:
-        name: 信息库名称
-        
-    Returns:
-        files: 文件列表
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                 'data', 'crawled_data', name)
-    qa_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                          'data', 'qa_generator_output', name)
 
-    files = []
-    search_dirs = [repository_dir, qa_dir]
-    for directory in search_dirs:
-        if not os.path.isdir(directory):
-            continue
-        for file_name in os.listdir(directory):
-            if '_qa_csv.csv' in file_name or '_qa_json.json' in file_name or file_name.endswith('_qa.json'):
-                file_path = os.path.join(directory, file_name)
-                if os.path.isfile(file_path):
-                    _, ext = os.path.splitext(file_name)
-                    modified_time = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    file_info = {
-                        'name': file_name,
-                        'path': file_path,
-                        'size': os.path.getsize(file_path),
-                        'modified': modified_time,
-                        'modified_time': modified_time,
-                        'type': ext.lower()[1:]
-                    }
-                    files.append(file_info)
-    
-    return files
-
-def update_repository_status(name, status):
-    """
-    更新信息库状态
-    
-    Args:
-        name: 信息库名称
-        status: 状态（incomplete/complete/error）
-        
-    Returns:
-        repository: 更新后的信息库配置
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库配置
-    repository = repositories[name]
-    
-    # 更新状态
-    repository['status'] = status
-    
-    # 更新时间
-    repository['updated_at'] = datetime.now().isoformat()
-    
-    # 保存配置
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository, f, ensure_ascii=False, indent=2)
-    
-    logging.info(f"更新信息库状态: {name} -> {status}")
-    
-    return repository
-
-def set_repository_dataset_id(name, dataset_id):
-    """
-    设置信息库的Dataset ID
-    
-    Args:
-        name: 信息库名称
-        dataset_id: RAGFlow Dataset ID
-        
-    Returns:
-        repository: 更新后的信息库配置
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库配置
-    repository = repositories[name]
-    
-    # 更新Dataset ID
-    repository['dataset_id'] = dataset_id
-    
-    # 更新时间
-    repository['updated_at'] = datetime.now().isoformat()
-    
-    # 保存配置
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository, f, ensure_ascii=False, indent=2)
-    
-    logging.info(f"设置信息库Dataset ID: {name} -> {dataset_id}")
-    
-    return repository
-
-def set_auto_update(name, auto_update, update_frequency=None):
-    """
-    设置信息库自动更新
-    
-    Args:
-        name: 信息库名称
-        auto_update: 是否自动更新
-        update_frequency: 更新频率（daily/weekly/monthly/yearly）
-        
-    Returns:
-        repository: 更新后的信息库配置
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库配置
-    repository = repositories[name]
-    
-    # 检查是否是爬虫来源
-    if repository['source'] != 'crawler' and auto_update:
-        raise ValueError(f"只有爬虫来源的信息库才能设置自动更新")
-    
-    # 更新自动更新设置
-    repository['auto_update'] = auto_update
-    repository['update_frequency'] = update_frequency if auto_update else None
-    
-    # 更新时间
-    repository['updated_at'] = datetime.now().isoformat()
-    
-    # 保存配置
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository, f, ensure_ascii=False, indent=2)
-    
-    logging.info(f"设置信息库自动更新: {name} -> {auto_update}, 频率: {update_frequency}")
-    
-    return repository
-
-def set_direct_import(name, direct_import):
-    """
-    设置信息库直接入库
-    
-    Args:
-        name: 信息库名称
-        direct_import: 是否直接入库
-        
-    Returns:
-        repository: 更新后的信息库配置
-    """
-    if name not in repositories:
-        raise ValueError(f"信息库不存在: {name}")
-    
-    # 获取信息库配置
-    repository = repositories[name]
-    
-    # 更新直接入库设置
-    repository['direct_import'] = direct_import
-    
-    # 更新时间
-    repository['updated_at'] = datetime.now().isoformat()
-    
-    # 保存配置
-    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                 'data', 'crawled_data', name)
-    config_file = os.path.join(repository_dir, 'repository_config.json')
-    with open(config_file, 'w', encoding='utf-8') as f:
-        json.dump(repository, f, ensure_ascii=False, indent=2)
-    
-    logging.info(f"设置信息库直接入库: {name} -> {direct_import}")
-    
-    return repository
-
-def batch_update_repositories(repository_names, updates):
-    """
-    批量更新信息库
-    
-    Args:
-        repository_names: 信息库名称列表
-        updates: 更新内容
-        
-    Returns:
-        results: 更新结果
-    """
-    results = {}
-    
-    for name in repository_names:
+def _read_pdf(file_path: str) -> str:
+    # 兼容 PyPDF2 新旧版 API
+    content: List[str] = []
+    with open(file_path, "rb") as fp:
         try:
-            if name in repositories:
-                repository = update_repository(name, updates)
-                results[name] = {
-                    'success': True,
-                    'repository': repository
-                }
-            else:
-                results[name] = {
-                    'success': False,
-                    'error': f"信息库不存在: {name}"
-                }
-        except Exception as e:
-            results[name] = {
-                'success': False,
-                'error': str(e)
-            }
-    
-    return results
+            pdf_reader = PyPDF2.PdfReader(fp)  # PyPDF2>=3.x
+            pages = pdf_reader.pages
+            extract = lambda page: page.extract_text()
+        except AttributeError:
+            pdf_reader = PyPDF2.PdfFileReader(fp)  # type: ignore[attr-defined]
+            pages = [pdf_reader.getPage(i) for i in range(pdf_reader.numPages)]
+            extract = lambda page: page.extractText()
 
-def batch_set_auto_update(repository_names, auto_update, update_frequency=None):
-    """
-    批量设置信息库自动更新
-    
-    Args:
-        repository_names: 信息库名称列表
-        auto_update: 是否自动更新
-        update_frequency: 更新频率（daily/weekly/monthly/yearly）
-        
-    Returns:
-        results: 更新结果
-    """
-    results = {}
-    
-    for name in repository_names:
-        try:
-            if name in repositories:
-                # 检查是否是爬虫来源
-                if repositories[name]['source'] != 'crawler' and auto_update:
-                    results[name] = {
-                        'success': False,
-                        'error': f"只有爬虫来源的信息库才能设置自动更新"
-                    }
-                    continue
-                
-                repository = set_auto_update(name, auto_update, update_frequency)
-                results[name] = {
-                    'success': True,
-                    'repository': repository
-                }
-            else:
-                results[name] = {
-                    'success': False,
-                    'error': f"信息库不存在: {name}"
-                }
-        except Exception as e:
-            results[name] = {
-                'success': False,
-                'error': str(e)
-            }
-    
-    return results
+        for page in pages:
+            try:
+                content.append(extract(page) or "")
+            except Exception:
+                # 若单页解析失败，仅记录日志，不中断整体流程
+                logging.debug("PDF 页面解析失败: %s 页", page)
 
-def batch_set_direct_import(repository_names, direct_import):
-    """
-    批量设置信息库直接入库
-    
-    Args:
-        repository_names: 信息库名称列表
-        direct_import: 是否直接入库
-        
-    Returns:
-        results: 更新结果
-    """
-    results = {}
-    
-    for name in repository_names:
-        try:
-            if name in repositories:
-                repository = set_direct_import(name, direct_import)
-                results[name] = {
-                    'success': True,
-                    'repository': repository
-                }
-            else:
-                results[name] = {
-                    'success': False,
-                    'error': f"信息库不存在: {name}"
-                }
-        except Exception as e:
-            results[name] = {
-                'success': False,
-                'error': str(e)
-            }
-    
-    return results
+    return "\n\n".join(content)
+
+
+def _read_html(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
+        html_raw = fp.read()
+
+    soup = BeautifulSoup(html_raw, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    h = html2text.HTML2Text()
+    h.ignore_links = False
+    h.ignore_images = True
+    h.ignore_tables = False
+
+    return h.handle(str(soup))
+
+
+def _read_xlsx(file_path: str) -> str:
+    if openpyxl is None:
+        logging.error("无法读取 .xlsx，未安装 openpyxl: %s", file_path)
+        return ""
+
+    wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+    chunks: List[str] = []
+
+    for sheet in wb.worksheets:
+        chunks.append(f"### 工作表: {sheet.title}")
+        for row in sheet.iter_rows(values_only=True):
+            # 将一行单元格用制表符连接，剔除 None
+            row_text = "\t".join("" if v is None else str(v) for v in row)
+            chunks.append(row_text)
+        # 两个空行分隔不同工作表
+        chunks.append("\n")
+
+    wb.close()
+    return "\n".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# 其他工具函数
+# ---------------------------------------------------------------------------
+
+def calculate_hash(content: str | bytes) -> str:
+    """计算内容 MD5 哈希。"""
+    if isinstance(content, str):
+        content = content.encode("utf-8", errors="ignore")
+    return hashlib.md5(content).hexdigest()
+
+
+def ensure_directory(directory: str) -> None:
+    """确保目录存在，不存在则创建。"""
+    if not directory:
+        raise ValueError("目录路径不能为空。")
+    os.makedirs(directory, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# 模块导出
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "list_files",
+    "read_file",
+    "read_file_content",  # backward compatibility
+    "calculate_hash",
+    "ensure_directory",
+]

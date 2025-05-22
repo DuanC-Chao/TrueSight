@@ -132,44 +132,6 @@ def get_crawl_status(task_id):
         error_logs.add_error_log('crawler', str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@api_blueprint.route('/crawler/pause/<task_id>', methods=['POST'])
-def pause_crawl(task_id):
-    """暂停爬取任务"""
-    try:
-        success = crawler_manager.pause_crawl(task_id)
-        
-        if not success:
-            return jsonify({'success': False, 'error': '暂停任务失败'}), 400
-        
-        return jsonify({
-            'success': True,
-            'task_id': task_id
-        })
-    
-    except Exception as e:
-        logging.error(f"暂停爬取任务失败: {str(e)}")
-        error_logs.add_error_log('crawler', str(e))
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@api_blueprint.route('/crawler/resume/<task_id>', methods=['POST'])
-def resume_crawl(task_id):
-    """恢复爬取任务"""
-    try:
-        success = crawler_manager.resume_crawl(task_id)
-        
-        if not success:
-            return jsonify({'success': False, 'error': '恢复任务失败'}), 400
-        
-        return jsonify({
-            'success': True,
-            'task_id': task_id
-        })
-    
-    except Exception as e:
-        logging.error(f"恢复爬取任务失败: {str(e)}")
-        error_logs.add_error_log('crawler', str(e))
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 @api_blueprint.route('/crawler/stop/<task_id>', methods=['POST'])
 def stop_crawl(task_id):
     """停止爬取任务"""

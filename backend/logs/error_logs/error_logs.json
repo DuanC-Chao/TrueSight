@@ -54,5 +54,133 @@
     "repository_name": "test",
     "error_message": "start_summary_generation() takes 1 positional argument but 2 were given",
     "stack_trace": null
+  },
+  {
+    "id": "8d0ed1b7-9aff-4965-92da-463c4d19c621",
+    "timestamp": "2025-05-21T21:52:59.072029",
+    "task_type": "repository",
+    "repository_name": "test2",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "f22fecb8-2158-46f0-b1c0-3c5381752f60",
+    "timestamp": "2025-05-21T21:52:59.093385",
+    "task_type": "repository",
+    "repository_name": "test2",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "d643feb2-0bf5-4dc8-af62-4eff6534867c",
+    "timestamp": "2025-05-21T21:52:59.098164",
+    "task_type": "repository",
+    "repository_name": "test2",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "8fd347f4-180b-4afe-8bbd-387280dd255d",
+    "timestamp": "2025-05-21T21:52:59.115122",
+    "task_type": "repository",
+    "repository_name": "test2",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "65596816-ddbf-43a2-875e-825b41c7584f",
+    "timestamp": "2025-05-21T21:53:05.840373",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "84e51bba-2079-437c-ad96-d82e1d897612",
+    "timestamp": "2025-05-21T21:53:05.842267",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "b87a26b0-8161-42c6-ba9e-00c73831bcb8",
+    "timestamp": "2025-05-21T21:53:05.857102",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "67f22d9e-52ca-4636-a1d3-e44bf329daa0",
+    "timestamp": "2025-05-21T21:53:05.859231",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "4098cc1b-8c14-4e92-b4e7-be2f9146d6f4",
+    "timestamp": "2025-05-21T21:53:34.214867",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "7e692e49-514a-460c-bf29-d18d08fcb66a",
+    "timestamp": "2025-05-21T21:53:34.226608",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "7f265f89-0d1f-4149-9ee0-3b9f51bd30e6",
+    "timestamp": "2025-05-21T21:53:34.227853",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "54da5ef1-4bf5-4d8c-8a0b-d4f0a56360e5",
+    "timestamp": "2025-05-21T21:53:34.240118",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "45433203-9d5f-4c30-bbeb-0dfd97c77b72",
+    "timestamp": "2025-05-21T21:54:15.702325",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "c03546ec-46d4-4a66-9a76-f8486078f468",
+    "timestamp": "2025-05-21T21:54:15.710104",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "77c9bcf9-f7af-4997-a348-28de92aa8303",
+    "timestamp": "2025-05-21T21:54:15.711241",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
+  },
+  {
+    "id": "921adeef-cb5b-459a-aaca-bd39279fd61a",
+    "timestamp": "2025-05-21T21:54:15.723508",
+    "task_type": "repository",
+    "repository_name": "test",
+    "error_message": "name 'repository_dir' is not defined",
+    "stack_trace": null
   }
 ]

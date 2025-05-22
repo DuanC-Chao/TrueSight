@@ -96,44 +96,57 @@ def start_token_calculation(repository_name):
         'token_count_deepseek': 0,
     }
 
+
 def _token_calculation_worker(task_id, repository_name):
     """
-    Token计算工作线程
-    
+    Token计算工作线程（修改版）
+
     Args:
         task_id: 任务ID
         repository_name: 信息库名称
     """
     try:
         # 获取信息库目录
-        repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                     'data', 'crawled_data', repository_name)
-        
+        repository_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'data', 'crawled_data', repository_name))
+
         # 检查目录是否存在
         if not os.path.exists(repository_dir):
             raise FileNotFoundError(f"信息库目录不存在: {repository_dir}")
-        
+
+        # 创建token_count目录
+        token_count_dir = os.path.join(repository_dir, 'token_count')
+        os.makedirs(token_count_dir, exist_ok=True)
+
+        # 删除旧的统计文件
+        for filename in os.listdir(token_count_dir):
+            if filename.startswith('token_count_') and filename.endswith('.txt'):
+                file_path = os.path.join(token_count_dir, filename)
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    logging.error(f"删除旧文件失败: {file_path}, 错误: {str(e)}")
+
         # 获取所有文本文件
-        files = file_utils.list_files(repository_dir, ['.txt', '.pdf', '.html'])
-        
+        files = file_utils.list_files(repository_dir, ['.txt', '.pdf', '.html', '.xlsx'])
+
         # 更新任务状态
         with process_lock:
             process_status[task_id]['total_files'] = len(files)
-        
+
         # 为多种模型准备tokenizer
         tokenizers = {
-            'token_count_gpt4o': token_utils.get_tokenizer('gpt-4o'),
+            'token_count_gpt4o': token_utils.get_tokenizer('openai'),
             'token_count_deepseek': token_utils.get_tokenizer('deepseek'),
             'token_count_jina': token_utils.get_tokenizer('jina'),
         }
 
         token_counts = {k: 0 for k in tokenizers}
-
-        # 创建Token跟踪文件
         token_tracker_paths = {
-            k: os.path.join(repository_dir, f"{k}.txt") for k in tokenizers
+            k: os.path.join(token_count_dir, f"{k}.txt") for k in tokenizers
         }
-        
+
         # 处理每个文件
         processed_files = 0
         for file_path in files:
@@ -143,6 +156,7 @@ def _token_calculation_worker(task_id, repository_name):
                 for key, tokenizer in tokenizers.items():
                     tokens = token_utils.count_tokens(content, tokenizer)
                     token_counts[key] += tokens
+                    # 立即写入每个文件的统计结果
                     with open(token_tracker_paths[key], 'a', encoding='utf-8') as f:
                         f.write(f"{os.path.basename(file_path)}: {tokens}\n")
 
@@ -154,9 +168,11 @@ def _token_calculation_worker(task_id, repository_name):
             except Exception as e:
                 logging.error(f"处理文件失败: {file_path}, 错误: {str(e)}")
 
+        # 写入最终统计结果（包含总Token数）
         for key, count in token_counts.items():
             with open(token_tracker_paths[key], 'a', encoding='utf-8') as f:
-                f.write(f"\n总Token数: {count}\n")
+                # 直接追加总Token数（不添加额外空行）
+                f.write(f"总Token数: {count}\n")
 
         # 更新信息库的Token计数
         try:
@@ -166,23 +182,23 @@ def _token_calculation_worker(task_id, repository_name):
             })
         except Exception as e:
             logging.error(f"更新信息库Token计数失败: {str(e)}")
-        
+
         # 更新任务状态
         with process_lock:
             process_status[task_id]['status'] = 'completed'
             process_status[task_id]['end_time'] = datetime.now().isoformat()
-        
+
         logging.info(
             f"Token计算任务 {task_id} 已完成，信息库: {repository_name}, 总Token数: {sum(token_counts.values())}"
         )
-    
+
     except Exception as e:
         # 更新任务状态为失败
         with process_lock:
             process_status[task_id]['status'] = 'failed'
             process_status[task_id]['error'] = str(e)
             process_status[task_id]['end_time'] = datetime.now().isoformat()
-        
+
         logging.error(f"Token计算任务 {task_id} 失败: {str(e)}")
 
 def start_summary_generation(repository_name, llm_config=None):

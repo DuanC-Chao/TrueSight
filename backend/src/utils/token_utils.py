@@ -14,7 +14,7 @@ import tiktoken
 from transformers import AutoTokenizer
 
 @lru_cache(maxsize=4)
-def get_tokenizer(model: str = "gpt-3.5-turbo"):
+def get_tokenizer(model):
     """Return a tokenizer instance for the given model.
 
     The function tries to provide sensible defaults for several known
@@ -24,79 +24,38 @@ def get_tokenizer(model: str = "gpt-3.5-turbo"):
     """
     name = (model or "").lower()
     try:
-        if name.startswith("gpt-4") or name.startswith("gpt-3.5"):
-            try:
-                return tiktoken.encoding_for_model(model)
-            except Exception:
-                return tiktoken.get_encoding("cl100k_base")
-        if "gpt-4o" in name:
-            return tiktoken.get_encoding("cl100k_base")
+        if "openai" in name:
+            return tiktoken.encoding_for_model("gpt-4o")
         if "deepseek" in name:
-            try:
-                return AutoTokenizer.from_pretrained(
-                    "deepseek-ai/deepseek-llm-7b-base",
-                    trust_remote_code=True,
-                    use_fast=True,
-                )
-            except Exception as e:
-                logging.error(f"获取tokenizer失败: {e}")
-                return tiktoken.get_encoding("cl100k_base")
-        if "jina" in name:
-            try:
-                return AutoTokenizer.from_pretrained(
-                    "xlm-roberta-base", use_fast=True
-                )
-            except Exception as e:
-                logging.error(f"获取tokenizer失败: {e}")
-                return tiktoken.get_encoding("cl100k_base")
-    except Exception as e:  # pragma: no cover - defensive
-        logging.error(f"获取tokenizer失败: {e}")
-    return tiktoken.get_encoding("cl100k_base")
-
-
-@lru_cache(maxsize=None)
-def get_tokenizer(model: str = "gpt-3.5-turbo"):
-    """Return a tokenizer instance for the given model name."""
-    try:
-        m = model.lower()
-        if m.startswith("gpt-4") or m.startswith("gpt-3.5"):
-            return tiktoken.encoding_for_model(model)
-        if "gpt-4o" in m:
-            try:
-                return tiktoken.encoding_for_model("gpt-4o")
-            except Exception:
-                return tiktoken.get_encoding("cl100k_base")
-        if "deepseek" in m:
             return AutoTokenizer.from_pretrained(
                 "deepseek-ai/deepseek-llm-7b-base",
                 trust_remote_code=True,
                 use_fast=True,
             )
-        if "jina" in m:
+        if "jina" in name:
             return AutoTokenizer.from_pretrained("xlm-roberta-base", use_fast=True)
-    except Exception as e:
-        logging.error(f"获取tokenizer失败: {str(e)}")
-    # Fallback
+
+    except Exception as e:  # pragma: no cover - defensive
+        logging.error(f"获取tokenizer失败: {e}，使用cl100k_base Tokenizer")
     return tiktoken.get_encoding("cl100k_base")
 
-def count_tokens(text, model_or_tokenizer="gpt-3.5-turbo"):
+def count_tokens(text, tokenizer):
     """Return the token count for the given text.
 
     Parameters
     ----------
     text: str
         Text to tokenize.
-    model_or_tokenizer: str or tokenizer
-        Either a model name or a tokenizer instance.
+    tokenizer: the tokenizer
+        a tokenizer instance.
+
+    Args:
+        tokenizer:
     """
     if not text:
         return 0
 
     try:
-        tokenizer = model
-        if isinstance(model, str):
-            tokenizer = get_tokenizer(model)
-
         if hasattr(tokenizer, "encode"):
             tokens = tokenizer.encode(text)
         else:  # pragma: no cover - should not happen
@@ -104,5 +63,5 @@ def count_tokens(text, model_or_tokenizer="gpt-3.5-turbo"):
 
         return len(tokens)
     except Exception as e:
-        logging.error(f"计算Token失败: {str(e)}")
+        logging.error(f"计算Token失败: {str(e)}，使用估算")
         return int(len(text.split()) * 1.3)

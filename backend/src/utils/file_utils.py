@@ -1,194 +1,225 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 """
-文件工具模块
+file_utils.py
 
-本模块提供文件操作相关的工具函数，包括文件列表获取、内容读取、哈希计算等。
+增强后的文件工具模块。
+
+更新内容
+--------
+1. **新增 .xlsx 支持** —— 通过 `openpyxl` 解析 Excel 工作簿。
+2. **去除重复函数** —— 保留唯一 `read_file` 接口，内部按扩展名路由。
+3. **list_files 改进**
+   * 扩展名大小写不敏感；
+   * 新增 `skip_hidden` 参数忽略隐藏文件/目录；
+   * `extensions=None` 时返回全部文件。
+4. **统一错误处理 & 记录** —— 更细粒度的异常捕获与日志。
+5. **其他**
+   * `ensure_directory` 对空路径做校验；
+   * 模块顶层导出 `__all__`；
+   * 对 HTML / PDF 解析兼容旧版 `PyPDF2`。
+
+依赖
+----
+```bash
+pip install openpyxl html2text PyPDF2 beautifulsoup4
+```
 """
+from __future__ import annotations
 
 import os
 import hashlib
 import logging
-import PyPDF2
-import html2text
-from bs4 import BeautifulSoup
+from typing import List, Optional
 
-def list_files(directory, extensions=None, name_filter=None):
-    """
-    获取指定目录下的文件列表
-    
+import PyPDF2  # type: ignore
+import html2text  # type: ignore
+from bs4 import BeautifulSoup  # type: ignore
+
+# Excel 解析依赖
+try:
+    import openpyxl  # type: ignore
+except ImportError:  # pragma: no cover – graceful degradation
+    openpyxl = None
+    logging.warning("openpyxl 未安装，.xlsx 文件读取功能不可用。")
+
+# ---------------------------------------------------------------------------
+# 公共工具函数
+# ---------------------------------------------------------------------------
+
+SUPPORTED_EXTS = {".txt", ".pdf", ".html", ".htm", ".xlsx"}
+
+
+def list_files(
+    directory: str,
+    extensions: Optional[List[str]] = None,
+    name_filter: Optional[str] = None,
+    skip_hidden: bool = True,
+) -> List[str]:
+    """递归获取目录下的文件列表。
+
     Args:
-        directory: 目录路径
-        extensions: 文件扩展名列表，如['.txt', '.pdf']
-        name_filter: 文件名过滤字符串，如果文件名包含此字符串则保留
-        
+        directory: 根目录路径。
+        extensions: 允许的文件扩展名列表（带点，例如 [".txt", ".pdf"]）。若为 *None*，则不过滤。
+        name_filter: 仅当文件 **名**（不含路径）包含该子串时保留。
+        skip_hidden: 为 *True* 时忽略以点开头的隐藏文件 / 目录。
+
     Returns:
-        files: 文件路径列表
+        收集到的文件绝对路径列表。
     """
-    files = []
-    
+    files: List[str] = []
+
     if not os.path.exists(directory):
-        logging.warning(f"目录不存在: {directory}")
+        logging.warning("目录不存在: %s", directory)
         return files
-    
-    for root, _, filenames in os.walk(directory):
+
+    # 构造扩展名集合，统一为小写
+    ext_set = {ext.lower() for ext in extensions} if extensions else None
+
+    for root, dirnames, filenames in os.walk(directory):
+        if skip_hidden:
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            filenames = [f for f in filenames if not f.startswith(".")]
+
         for filename in filenames:
-            file_path = os.path.join(root, filename)
-            
-            # 检查扩展名
-            if extensions:
-                ext = os.path.splitext(filename)[1].lower()
-                if ext not in extensions:
-                    continue
-            
-            # 检查文件名过滤
             if name_filter and name_filter not in filename:
                 continue
-            
-            files.append(file_path)
-    
+
+            ext = os.path.splitext(filename)[1].lower()
+            if ext_set is not None and ext not in ext_set:
+                continue
+
+            files.append(os.path.join(root, filename))
+
     return files
 
-def read_file(file_path):
-    """Thin wrapper used by processor modules."""
-    return read_file_content(file_path)
 
-def read_file_content(file_path):
-    """
-    读取文件内容，支持txt、pdf、html格式
-    
-    Args:
-        file_path: 文件路径
-        
-    Returns:
-        content: 文件内容
-    """
+# ---------------------------------------------------------------------------
+# 统一的文件读取入口
+# ---------------------------------------------------------------------------
+
+def read_file(file_path: str) -> str:  # noqa: D401 – simple description is fine
+    """将各种受支持格式的文件读取为纯文本。"""
     if not os.path.exists(file_path):
-        logging.error(f"文件不存在: {file_path}")
+        logging.error("文件不存在: %s", file_path)
         return ""
-    
+
     ext = os.path.splitext(file_path)[1].lower()
-    
-    try:
-        if ext == '.txt':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        
-        elif ext == '.pdf':
-            return read_pdf_content(file_path)
-        
-        elif ext == '.html':
-            return read_html_content(file_path)
-        
-        else:
-            logging.warning(f"不支持的文件格式: {ext}")
-            return ""
-    
-    except Exception as e:
-        logging.error(f"读取文件失败: {file_path}, 错误: {str(e)}")
+
+    reader_map = {
+        ".txt": _read_txt,
+        ".pdf": _read_pdf,
+        ".html": _read_html,
+        ".htm": _read_html,
+        ".xlsx": _read_xlsx,
+    }
+
+    reader = reader_map.get(ext)
+    if reader is None:
+        logging.warning("不支持的文件格式: %s", ext)
         return ""
 
-# 向后兼容的别名
-def read_file(file_path):
-    """读取文件内容的兼容函数"""
-    return read_file_content(file_path)
-
-def read_pdf_content(file_path):
-    """
-    读取PDF文件内容
-    
-    Args:
-        file_path: 文件路径
-        
-    Returns:
-        content: 文件内容
-    """
     try:
-        with open(file_path, 'rb') as f:
+        return reader(file_path)
+    except Exception as exc:  # pragma: no cover – top‑level catch
+        logging.error("读取文件失败: %s | %s", file_path, exc)
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# 各格式文件专用读取函数
+# ---------------------------------------------------------------------------
+
+def _read_txt(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
+        return fp.read()
+
+
+def _read_pdf(file_path: str) -> str:
+    # 兼容 PyPDF2 新旧版 API
+    content: List[str] = []
+    with open(file_path, "rb") as fp:
+        try:
+            pdf_reader = PyPDF2.PdfReader(fp)  # PyPDF2>=3.x
+            pages = pdf_reader.pages
+            extract = lambda page: page.extract_text()
+        except AttributeError:
+            pdf_reader = PyPDF2.PdfFileReader(fp)  # type: ignore[attr-defined]
+            pages = [pdf_reader.getPage(i) for i in range(pdf_reader.numPages)]
+            extract = lambda page: page.extractText()
+
+        for page in pages:
             try:
-                pdf_reader = PyPDF2.PdfReader(f)  # PyPDF2 >= 2
-                get_text = lambda page: page.extract_text()
-            except AttributeError:
-                pdf_reader = PyPDF2.PdfFileReader(f)  # type: ignore
-                get_text = lambda page: page.extractText()
+                content.append(extract(page) or "")
+            except Exception:
+                # 若单页解析失败，仅记录日志，不中断整体流程
+                logging.debug("PDF 页面解析失败: %s 页", page)
 
-            content = ""
-            num_pages = len(getattr(pdf_reader, "pages", []))
-            if num_pages == 0 and hasattr(pdf_reader, "numPages"):
-                num_pages = pdf_reader.numPages
+    return "\n\n".join(content)
 
-            for page_num in range(num_pages):
-                if hasattr(pdf_reader, "pages"):
-                    page = pdf_reader.pages[page_num]
-                else:
-                    page = pdf_reader.getPage(page_num)
-                try:
-                    content += get_text(page) + "\n\n"
-                except Exception:
-                    pass
 
-            return content
-    
-    except Exception as e:
-        logging.error(f"读取PDF文件失败: {file_path}, 错误: {str(e)}")
+def _read_html(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
+        html_raw = fp.read()
+
+    soup = BeautifulSoup(html_raw, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    h = html2text.HTML2Text()
+    h.ignore_links = False
+    h.ignore_images = True
+    h.ignore_tables = False
+
+    return h.handle(str(soup))
+
+
+def _read_xlsx(file_path: str) -> str:
+    if openpyxl is None:
+        logging.error("无法读取 .xlsx，未安装 openpyxl: %s", file_path)
         return ""
 
-def read_html_content(file_path):
-    """
-    读取HTML文件内容
-    
-    Args:
-        file_path: 文件路径
-        
-    Returns:
-        content: 文件内容
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        # 使用BeautifulSoup解析HTML
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # 移除脚本和样式元素
-        for script in soup(["script", "style"]):
-            script.extract()
-        
-        # 使用html2text转换为纯文本
-        h = html2text.HTML2Text()
-        h.ignore_links = False
-        h.ignore_images = True
-        h.ignore_tables = False
-        
-        text = h.handle(str(soup))
-        return text
-    
-    except Exception as e:
-        logging.error(f"读取HTML文件失败: {file_path}, 错误: {str(e)}")
-        return ""
+    wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+    chunks: List[str] = []
 
-def calculate_hash(content):
-    """
-    计算内容的哈希值
-    
-    Args:
-        content: 文件内容（字节或字符串）
-        
-    Returns:
-        hash_value: 哈希值
-    """
+    for sheet in wb.worksheets:
+        chunks.append(f"### 工作表: {sheet.title}")
+        for row in sheet.iter_rows(values_only=True):
+            # 将一行单元格用制表符连接，剔除 None
+            row_text = "\t".join("" if v is None else str(v) for v in row)
+            chunks.append(row_text)
+        # 两个空行分隔不同工作表
+        chunks.append("\n")
+
+    wb.close()
+    return "\n".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# 其他工具函数
+# ---------------------------------------------------------------------------
+
+def calculate_hash(content: str | bytes) -> str:
+    """计算内容 MD5 哈希。"""
     if isinstance(content, str):
-        content = content.encode('utf-8')
-    
+        content = content.encode("utf-8", errors="ignore")
     return hashlib.md5(content).hexdigest()
 
-def ensure_directory(directory):
-    """
-    确保目录存在，如果不存在则创建
-    
-    Args:
-        directory: 目录路径
-    """
-    if not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
+
+def ensure_directory(directory: str) -> None:
+    """确保目录存在，不存在则创建。"""
+    if not directory:
+        raise ValueError("目录路径不能为空。")
+    os.makedirs(directory, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# 模块导出
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "list_files",
+    "read_file",
+    "calculate_hash",
+    "ensure_directory",
+]
