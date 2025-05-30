@@ -74,14 +74,6 @@ npm start
 npm run build
 ```
 
-## 配置
-
-主要配置文件位于`backend/config/`目录下：
-
-- `config.yaml`：全局配置
-- `ragflow.yaml`：RAGFlow API配置
-- `crawler.yaml`：爬虫配置
-
 ## 许可证
 
 [MIT](LICENSE)
