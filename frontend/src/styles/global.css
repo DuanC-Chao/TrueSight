@@ -1,0 +1,265 @@
+/* TrueSight 全局样式 */
+
+/* 基础变量 */
+:root {
+  --primary-color: #1890ff;
+  --primary-color-light: #40a9ff;
+  --primary-color-dark: #096dd9;
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --error-color: #f5222d;
+  --heading-color: #262626;
+  --text-color: #595959;
+  --text-color-secondary: #8c8c8c;
+  --disabled-color: rgba(0, 0, 0, 0.25);
+  --border-color: #d9d9d9;
+  --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --border-radius: 4px;
+  --transition-duration: 0.3s;
+}
+
+/* 全局样式 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  background-color: #f0f2f5;
+  margin: 0;
+  padding: 0;
+}
+
+/* 扁平化卡片样式 */
+.flat-card {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.flat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 渐变按钮 */
+.ant-btn-primary {
+  background: linear-gradient(135deg, var(--primary-color-light), var(--primary-color-dark));
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.ant-btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-color-light), var(--primary-color));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+}
+
+/* 主布局样式 */
+.main-layout {
+  min-height: 100vh;
+}
+
+/* 头部样式 */
+.site-header {
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+/* 内容区域样式 */
+.site-content {
+  padding: 24px 0;
+  background: #f0f2f5;
+}
+
+/* 页脚样式 */
+.site-footer {
+  text-align: center;
+  padding: 16px 50px;
+  background: #fff;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* Logo样式 */
+.logo {
+  float: left;
+  margin-right: 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+}
+
+/* 信息库卡片样式 */
+.repository-card {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.repository-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* 自动更新频率颜色标识 */
+.update-daily {
+  border-left: 4px solid var(--primary-color);
+}
+
+.update-weekly {
+  border-left: 4px solid var(--success-color);
+}
+
+.update-monthly {
+  border-left: 4px solid #722ed1; /* 紫色 */
+}
+
+.update-yearly {
+  border-left: 4px solid #eb2f96; /* 洋红色 */
+}
+
+/* 状态标签渐变 */
+.ant-tag-success {
+  background: linear-gradient(135deg, #95de64, #52c41a);
+  border: none;
+  color: white;
+}
+
+.ant-tag-warning {
+  background: linear-gradient(135deg, #ffd666, #faad14);
+  border: none;
+  color: white;
+}
+
+.ant-tag-error {
+  background: linear-gradient(135deg, #ff7875, #f5222d);
+  border: none;
+  color: white;
+}
+
+/* 表单样式优化 */
+.ant-form-item-label > label {
+  font-weight: 500;
+}
+
+/* 表格样式优化 */
+.ant-table {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+/* 标签页样式优化 */
+.ant-tabs-tab {
+  transition: all 0.3s ease;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--primary-color);
+}
+
+.ant-tabs-tab-active {
+  font-weight: 500;
+}
+
+/* 描述列表样式优化 */
+.ant-descriptions-bordered .ant-descriptions-item-label {
+  background-color: #fafafa;
+  font-weight: 500;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .site-header {
+    padding: 0 12px;
+  }
+  
+  .site-content {
+    padding: 12px 0;
+  }
+  
+  .ant-table {
+    font-size: 12px;
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 加载状态样式 */
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  min-height: 200px;
+}
+
+/* 错误状态样式 */
+.error-container {
+  text-align: center;
+  padding: 24px;
+  background: #fff1f0;
+  border-radius: 8px;
+  border: 1px solid #ffccc7;
+}
+
+/* 空状态样式 */
+.empty-container {
+  padding: 48px 0;
+  text-align: center;
+}
+
+/* 文件类型标签颜色 */
+.file-type-txt {
+  color: #389e0d;
+  background: #f6ffed;
+  border-color: #b7eb8f;
+}
+
+.file-type-pdf {
+  color: #cf1322;
+  background: #fff1f0;
+  border-color: #ffa39e;
+}
+
+.file-type-html {
+  color: #096dd9;
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}

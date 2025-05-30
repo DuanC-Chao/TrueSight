@@ -1,0 +1,96 @@
+crawler:
+  crawled_data_dir: crawled_data
+  max_depth: 3
+  max_threads: 5
+  timeout: 30
+  user_agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
+    like Gecko) Chrome/91.0.4472.114 Safari/537.36
+  blocklist: []  # 添加需要屏蔽的URL模式
+
+logging:
+  error_log_dir: error_logs
+  level: INFO
+
+processor:
+  # LLM提供商设置 - 选择一个提供商并配置
+  provider: openai  # 可选: openai, deepseek, qwen
+  
+  # OpenAI配置
+  openai:
+    api_key: 'YOUR_OPENAI_API_KEY_HERE'
+    model: 'gpt-3.5-turbo'
+  
+  # DeepSeek配置
+  deepseek:
+    api_key: 'YOUR_DEEPSEEK_API_KEY_HERE'
+    model: 'deepseek-chat'
+  
+  # 通义千问配置
+  qwen:
+    api_key: 'YOUR_QWEN_API_KEY_HERE'
+    model: 'qwen-turbo'
+  
+  # 通用设置
+  temperature: 0.2
+  max_tokens: 2000
+  
+  # 文件处理设置
+  ignored_filenames:
+  - cost_tracker.txt
+  - content_hashes.json
+  - .DS_Store
+  incremental_processing: true
+  input_dir: crawled_data
+  supported_file_types:
+  - .txt
+  - .pdf
+  - .html
+  
+  # 输出目录设置
+  qa_output_dir: qa_generator_output
+  summary_output_dir: summarizer_output
+  
+  # 总结生成提示词
+  summary_prompt: 请对以下内容进行总结，突出关键信息：
+  summary_system_prompt: 你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。
+  
+  # 问答生成阶段配置
+  qa_stages:
+    chunk:
+      enabled: true
+      chunk_size: 1000
+      chunk_overlap: 100
+      prompt: 请根据以下内容生成5-10个高质量的问答对，每个问答对应包含一个问题和一个详细的回答。输出格式为每行一个JSON对象，包含q和a字段。
+      system_prompt: 你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。
+    
+    reduce:
+      enabled: true
+      prompt: 请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。输出格式为每行一个JSON对象，包含q和a字段。
+      system_prompt: 你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。
+    
+    evaluate:
+      enabled: true
+      prompt: 请对以下问答对进行质量评估，为每个问答对添加一个self_eval字段，评分范围1-5，5分为最高。评估标准包括问题的清晰度、答案的准确性和完整性。输出格式为每行一个JSON对象，包含q、a和self_eval字段。
+      system_prompt: 你是一个专业的内容评估助手，擅长评估问答对的质量和价值。
+
+ragflow:
+  api_base_url: 'YOUR_RAGFLOW_API_BASE_URL'  # 例如: http://192.168.0.132
+  api_key: 'YOUR_RAGFLOW_API_KEY_HERE'
+  base_url: 'YOUR_RAGFLOW_BASE_URL'  # 例如: http://192.168.0.130
+  default_chunk_method: naive
+  default_embedding_model: jina-embeddings-v3
+  default_permission: team
+  auto_sync: false  # 完成问答对生成后是否自动同步到RAGFlow
+
+scheduler:
+  retry_count: 1
+  timezone: Asia/Shanghai
+  check_interval: 60  # 检查间隔（秒）
+
+system:
+  log_level: INFO
+  debug: false
+  
+server:
+  host: '0.0.0.0'
+  port: 5001 

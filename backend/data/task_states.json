@@ -1,0 +1,77 @@
+{
+  "token_1748433315": {
+    "id": "token_1748433315",
+    "type": "token",
+    "repository_name": "harvard",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-05-28T19:55:15.167299",
+    "updated_at": "2025-05-28T19:55:19.156071",
+    "started_at": "2025-05-28T19:55:15.168633",
+    "completed_at": "2025-05-28T19:55:19.156069",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 5314,
+        "token_count_deepseek": 5221,
+        "token_count_jina": 5908
+      }
+    },
+    "metadata": {
+      "processed_files": 1
+    }
+  },
+  "summary_1748433324": {
+    "id": "summary_1748433324",
+    "type": "summary",
+    "repository_name": "harvard",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-05-28T19:55:24.810918",
+    "updated_at": "2025-05-28T19:56:13.158048",
+    "started_at": "2025-05-28T19:55:24.812655",
+    "completed_at": "2025-05-28T19:56:13.158046",
+    "error": null,
+    "result": {
+      "total_files": 4,
+      "processed_files": 4,
+      "skipped_files": 0,
+      "new_files": 4,
+      "updated_files": 0
+    },
+    "metadata": {
+      "processed_files": 4,
+      "skipped_files": 0,
+      "new_files": 4,
+      "updated_files": 0
+    }
+  },
+  "qa_1748433335": {
+    "id": "qa_1748433335",
+    "type": "qa",
+    "repository_name": "harvard",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-05-28T19:55:35.481229",
+    "updated_at": "2025-05-28T20:00:57.366595",
+    "started_at": "2025-05-28T19:55:35.483153",
+    "completed_at": "2025-05-28T20:00:57.366593",
+    "error": null,
+    "result": {
+      "total_files": 4,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 14,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 14
+    }
+  }
+}
