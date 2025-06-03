@@ -11,6 +11,7 @@ import os
 import logging
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
+from datetime import datetime
 
 # 导入其他模块
 from ..crawler import crawler_manager
@@ -233,6 +234,54 @@ def generate_qa():
     try:
         data = request.get_json(silent=True)
         llm_config = None
+        use_summary_files = None
+        
+        if isinstance(data, dict):
+            repository_name = data.get('repository_name') or data.get('name')
+            llm_config = data.get('llm_config')
+            use_summary_files = data.get('use_summary_files')  # True=基于总结，False=基于原始文件，None=自动判断
+        elif isinstance(data, str):
+            repository_name = data
+        else:
+            repository_name = request.data.decode('utf-8').strip() if request.data else None
+        
+        # 验证参数
+        if not repository_name:
+            return jsonify({'success': False, 'error': '缺少信息库名称参数'}), 400
+        
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(repository_name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {repository_name}"}), 404
+        
+        # 如果指定使用总结文件，检查总结是否存在
+        if use_summary_files is True:
+            summary_files = repository_manager.get_repository_summary_files(repository_name)
+            if not summary_files:
+                return jsonify({'success': False, 'error': '未找到总结文件，请先生成总结'}), 400
+        
+        # 生成问答对
+        task_id = processor_manager.start_qa_generation(repository_name, llm_config, use_summary_files)
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'repository_name': repository_name,
+            'use_summary_files': use_summary_files
+        })
+    
+    except Exception as e:
+        logging.error(f"生成问答对失败: {str(e)}")
+        error_logs.add_error_log('processor', str(e), repository_name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/processor/qa/generate_from_original', methods=['POST'])
+def generate_qa_from_original():
+    """基于原始文件生成问答对"""
+    try:
+        data = request.get_json(silent=True)
+        llm_config = None
+        
         if isinstance(data, dict):
             repository_name = data.get('repository_name') or data.get('name')
             llm_config = data.get('llm_config')
@@ -250,17 +299,62 @@ def generate_qa():
         if not repository:
             return jsonify({'success': False, 'error': f"信息库不存在: {repository_name}"}), 404
         
-        # 生成问答对
-        task_id = processor_manager.start_qa_generation(repository_name, llm_config)
+        # 强制使用原始文件生成问答对
+        task_id = processor_manager.start_qa_generation(repository_name, llm_config, use_summary_files=False)
         
         return jsonify({
             'success': True,
             'task_id': task_id,
-            'repository_name': repository_name
+            'repository_name': repository_name,
+            'use_summary_files': False
         })
     
     except Exception as e:
-        logging.error(f"生成问答对失败: {str(e)}")
+        logging.error(f"基于原始文件生成问答对失败: {str(e)}")
+        error_logs.add_error_log('processor', str(e), repository_name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/processor/qa/generate_from_summary', methods=['POST'])
+def generate_qa_from_summary():
+    """基于总结文件生成问答对"""
+    try:
+        data = request.get_json(silent=True)
+        llm_config = None
+        
+        if isinstance(data, dict):
+            repository_name = data.get('repository_name') or data.get('name')
+            llm_config = data.get('llm_config')
+        elif isinstance(data, str):
+            repository_name = data
+        else:
+            repository_name = request.data.decode('utf-8').strip() if request.data else None
+        
+        # 验证参数
+        if not repository_name:
+            return jsonify({'success': False, 'error': '缺少信息库名称参数'}), 400
+        
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(repository_name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {repository_name}"}), 404
+        
+        # 检查总结文件是否存在
+        summary_files = repository_manager.get_repository_summary_files(repository_name)
+        if not summary_files:
+            return jsonify({'success': False, 'error': '未找到总结文件，请先生成总结'}), 400
+        
+        # 强制使用总结文件生成问答对
+        task_id = processor_manager.start_qa_generation(repository_name, llm_config, use_summary_files=True)
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'repository_name': repository_name,
+            'use_summary_files': True
+        })
+    
+    except Exception as e:
+        logging.error(f"基于总结文件生成问答对失败: {str(e)}")
         error_logs.add_error_log('processor', str(e), repository_name)
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -471,56 +565,200 @@ def list_repositories():
 def create_repository():
     """创建信息库"""
     try:
-        data = request.json
-        name = data.get('name')
-        source = data.get('source', 'crawler')
-        urls = data.get('urls')
-        config_override = data.get('config_override', {})
-        
-        # 处理爬取深度和线程数
-        max_depth = data.get('max_depth')
-        max_threads = data.get('max_threads')
-        
-        # 添加调试日志
-        logging.info(f"创建信息库请求数据: {data}")
-        logging.info(f"max_depth: {max_depth}, max_threads: {max_threads}")
-        
-        # 如果提供了这些参数，添加到 config_override 中
-        if max_depth is not None:
-            config_override['max_depth'] = max_depth
-        if max_threads is not None:
-            config_override['max_threads'] = max_threads
+        # 检查是否是文件上传请求
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # 处理文件上传
+            name = request.form.get('name')
+            description = request.form.get('description', '')
+            source = request.form.get('source', 'upload')
             
-        logging.info(f"config_override: {config_override}")
+            # 添加调试日志
+            logging.info(f"接收到文件上传请求: name={name}, source={source}")
+            logging.info(f"request.form: {dict(request.form)}")
+            logging.info(f"request.files keys: {list(request.files.keys())}")
+            
+            # 验证参数
+            if not name:
+                return jsonify({'success': False, 'error': '缺少信息库名称参数'}), 400
+            
+            # 检查信息库是否已存在
+            existing_repository = repository_manager.get_repository(name)
+            if existing_repository:
+                return jsonify({'success': False, 'error': f"信息库已存在: {name}"}), 400
+            
+            # 获取上传的文件
+            uploaded_files = request.files.getlist('files')
+            logging.info(f"获取到的文件数量: {len(uploaded_files)}")
+            for i, file in enumerate(uploaded_files):
+                logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', 'unknown')}")
+            
+            if not uploaded_files:
+                # 如果没有获取到文件，尝试其他可能的字段名
+                for key in request.files.keys():
+                    files = request.files.getlist(key)
+                    if files:
+                        uploaded_files.extend(files)
+                        logging.info(f"从字段 '{key}' 获取到 {len(files)} 个文件")
+                
+                if not uploaded_files:
+                    return jsonify({'success': False, 'error': '没有上传文件'}), 400
+            
+            # 创建信息库
+            repository = repository_manager.create_repository(
+                name=name,
+                source=source,
+                config_override={'description': description}
+            )
+            
+            # 保存上传的文件
+            repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                         'data', 'crawled_data', name)
+            
+            saved_files = []
+            for file in uploaded_files:
+                if file.filename:
+                    # 改进的文件名处理，更好地保留中文文件名
+                    original_name = file.filename
+                    name_part = os.path.splitext(original_name)[0]
+                    ext_part = os.path.splitext(original_name)[1]
+                    
+                    # 检查文件类型
+                    allowed_extensions = {'.txt', '.pdf', '.html'}
+                    file_ext = ext_part.lower()
+                    
+                    if file_ext not in allowed_extensions:
+                        logging.warning(f"跳过不支持的文件类型: {file.filename}")
+                        continue
+                    
+                    # 自定义文件名清理函数，保留中文字符
+                    def clean_filename(filename):
+                        """清理文件名，保留中文字符，只移除危险字符"""
+                        import re
+                        # 移除或替换危险字符，但保留中文、英文、数字、常见符号
+                        # 移除的字符：/ \ : * ? " < > |
+                        dangerous_chars = r'[/\\:*?"<>|]'
+                        cleaned = re.sub(dangerous_chars, '_', filename)
+                        # 移除开头和结尾的空格和点
+                        cleaned = cleaned.strip(' .')
+                        return cleaned
+                    
+                    # 使用自定义清理函数
+                    safe_name_part = clean_filename(name_part)
+                    
+                    # 如果清理后的名称为空或太短，使用原始名称的安全版本
+                    if not safe_name_part or len(safe_name_part.strip()) < 1:
+                        # 尝试使用secure_filename作为备选
+                        fallback_name = secure_filename(name_part)
+                        if fallback_name and len(fallback_name) >= 2:
+                            safe_name_part = fallback_name
+                        else:
+                            # 最后的备选方案：使用时间戳
+                            safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                    
+                    # 确保扩展名存在且正确
+                    if not ext_part:
+                        # 如果没有扩展名，尝试从MIME类型推断
+                        if hasattr(file, 'content_type'):
+                            if file.content_type == 'text/plain':
+                                ext_part = '.txt'
+                            elif file.content_type == 'application/pdf':
+                                ext_part = '.pdf'
+                            elif file.content_type == 'text/html':
+                                ext_part = '.html'
+                            else:
+                                ext_part = '.txt'  # 默认为txt
+                        else:
+                            ext_part = '.txt'  # 默认为txt
+                    
+                    # 重新组合文件名
+                    filename = safe_name_part + ext_part.lower()
+                    file_path = os.path.join(repository_dir, filename)
+                    
+                    # 检查文件是否已存在，如果存在则添加时间戳
+                    if os.path.exists(file_path):
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"{safe_name_part}_{timestamp}{ext_part.lower()}"
+                        file_path = os.path.join(repository_dir, filename)
+                    
+                    file.save(file_path)
+                    file_size = os.path.getsize(file_path)
+                    saved_files.append({
+                        'filename': filename,
+                        'original_name': original_name,
+                        'path': file_path,
+                        'size': file_size
+                    })
+                    logging.info(f"保存上传文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+            
+            if not saved_files:
+                return jsonify({'success': False, 'error': '没有有效的文件被保存'}), 400
+            
+            # 更新信息库状态
+            repository_manager.update_repository(name, {
+                'status': 'complete',
+                'uploaded_files': [f['filename'] for f in saved_files],
+                'updated_at': datetime.now().isoformat()
+            })
+            
+            return jsonify({
+                'success': True,
+                'repository': repository_manager.get_repository(name),
+                'repository_name': name,
+                'uploaded_files': [f['filename'] for f in saved_files]
+            })
         
-        # 验证参数
-        if not name:
-            return jsonify({'success': False, 'error': '缺少信息库名称参数'}), 400
-        
-        # 检查信息库是否已存在
-        existing_repository = repository_manager.get_repository(name)
-        if existing_repository:
-            return jsonify({'success': False, 'error': f"信息库已存在: {name}"}), 400
-        
-        # 创建信息库
-        repository = repository_manager.create_repository(
-            name=name,
-            source=source,
-            urls=urls,
-            config_override=config_override
-        )
-        
-        logging.info(f"创建的信息库配置: max_depth={repository.get('max_depth')}, max_threads={repository.get('max_threads')}")
-        
-        return jsonify({
-            'success': True,
-            'repository': repository,
-            'repository_name': name  # 确保返回 repository_name
-        })
+        else:
+            # 处理JSON请求（爬虫方式）
+            data = request.json
+            name = data.get('name')
+            source = data.get('source', 'crawler')
+            urls = data.get('urls')
+            config_override = data.get('config_override', {})
+            
+            # 处理爬取深度和线程数
+            max_depth = data.get('max_depth')
+            max_threads = data.get('max_threads')
+            
+            # 添加调试日志
+            logging.info(f"创建信息库请求数据: {data}")
+            logging.info(f"max_depth: {max_depth}, max_threads: {max_threads}")
+            
+            # 如果提供了这些参数，添加到 config_override 中
+            if max_depth is not None:
+                config_override['max_depth'] = max_depth
+            if max_threads is not None:
+                config_override['max_threads'] = max_threads
+                
+            logging.info(f"config_override: {config_override}")
+            
+            # 验证参数
+            if not name:
+                return jsonify({'success': False, 'error': '缺少信息库名称参数'}), 400
+            
+            # 检查信息库是否已存在
+            existing_repository = repository_manager.get_repository(name)
+            if existing_repository:
+                return jsonify({'success': False, 'error': f"信息库已存在: {name}"}), 400
+            
+            # 创建信息库
+            repository = repository_manager.create_repository(
+                name=name,
+                source=source,
+                urls=urls,
+                config_override=config_override
+            )
+            
+            logging.info(f"创建的信息库配置: max_depth={repository.get('max_depth')}, max_threads={repository.get('max_threads')}")
+            
+            return jsonify({
+                'success': True,
+                'repository': repository,
+                'repository_name': name  # 确保返回 repository_name
+            })
     
     except Exception as e:
         logging.error(f"创建信息库失败: {str(e)}")
-        error_logs.add_error_log('repository', str(e), name)
+        error_logs.add_error_log('repository', str(e), name if 'name' in locals() else None)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @api_blueprint.route('/repository/<name>', methods=['GET'])
@@ -798,6 +1036,195 @@ def update_repository_file_type_chunk_mapping(name):
     
     except Exception as e:
         logging.error(f"更新信息库文件类型映射失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/upload', methods=['POST'])
+def upload_repository_files(name):
+    """上传文件到信息库"""
+    try:
+        # 添加调试日志
+        logging.info(f"接收到文件上传请求: repository={name}")
+        logging.info(f"request.content_type: {request.content_type}")
+        logging.info(f"request.files keys: {list(request.files.keys())}")
+        
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        # 获取上传的文件 - 尝试多种可能的字段名
+        uploaded_files = []
+        
+        # 尝试不同的字段名
+        for field_name in ['files', 'files[]']:
+            files = request.files.getlist(field_name)
+            if files:
+                uploaded_files.extend(files)
+                logging.info(f"从字段 '{field_name}' 获取到 {len(files)} 个文件")
+        
+        # 如果还是没有文件，尝试获取所有文件
+        if not uploaded_files:
+            for key in request.files.keys():
+                files = request.files.getlist(key)
+                uploaded_files.extend(files)
+                logging.info(f"从字段 '{key}' 获取到 {len(files)} 个文件")
+        
+        logging.info(f"总共获取到的文件数量: {len(uploaded_files)}")
+        for i, file in enumerate(uploaded_files):
+            logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', 'unknown')}")
+        
+        if not uploaded_files:
+            return jsonify({'success': False, 'error': '没有上传文件'}), 400
+        
+        # 获取信息库目录
+        repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                     'data', 'crawled_data', name)
+        
+        # 确保目录存在
+        os.makedirs(repository_dir, exist_ok=True)
+        
+        saved_files = []
+        for file in uploaded_files:
+            if file.filename:
+                # 改进的文件名处理，更好地保留中文文件名
+                original_name = file.filename
+                name_part = os.path.splitext(original_name)[0]
+                ext_part = os.path.splitext(original_name)[1]
+                
+                # 检查文件类型
+                allowed_extensions = {'.txt', '.pdf', '.html'}
+                file_ext = ext_part.lower()
+                
+                if file_ext not in allowed_extensions:
+                    logging.warning(f"跳过不支持的文件类型: {file.filename}")
+                    continue
+                
+                # 自定义文件名清理函数，保留中文字符
+                def clean_filename(filename):
+                    """清理文件名，保留中文字符，只移除危险字符"""
+                    import re
+                    # 移除或替换危险字符，但保留中文、英文、数字、常见符号
+                    # 移除的字符：/ \ : * ? " < > |
+                    dangerous_chars = r'[/\\:*?"<>|]'
+                    cleaned = re.sub(dangerous_chars, '_', filename)
+                    # 移除开头和结尾的空格和点
+                    cleaned = cleaned.strip(' .')
+                    return cleaned
+                
+                # 使用自定义清理函数
+                safe_name_part = clean_filename(name_part)
+                
+                # 如果清理后的名称为空或太短，使用原始名称的安全版本
+                if not safe_name_part or len(safe_name_part.strip()) < 1:
+                    # 尝试使用secure_filename作为备选
+                    fallback_name = secure_filename(name_part)
+                    if fallback_name and len(fallback_name) >= 2:
+                        safe_name_part = fallback_name
+                    else:
+                        # 最后的备选方案：使用时间戳
+                        safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                
+                # 确保扩展名存在且正确
+                if not ext_part:
+                    # 如果没有扩展名，尝试从MIME类型推断
+                    if hasattr(file, 'content_type'):
+                        if file.content_type == 'text/plain':
+                            ext_part = '.txt'
+                        elif file.content_type == 'application/pdf':
+                            ext_part = '.pdf'
+                        elif file.content_type == 'text/html':
+                            ext_part = '.html'
+                        else:
+                            ext_part = '.txt'  # 默认为txt
+                    else:
+                        ext_part = '.txt'  # 默认为txt
+                
+                # 重新组合文件名
+                filename = safe_name_part + ext_part.lower()
+                file_path = os.path.join(repository_dir, filename)
+                
+                # 检查文件是否已存在，如果存在则添加时间戳
+                if os.path.exists(file_path):
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"{safe_name_part}_{timestamp}{ext_part.lower()}"
+                    file_path = os.path.join(repository_dir, filename)
+                
+                file.save(file_path)
+                file_size = os.path.getsize(file_path)
+                saved_files.append({
+                    'filename': filename,
+                    'original_name': original_name,
+                    'path': file_path,
+                    'size': file_size
+                })
+                logging.info(f"保存上传文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+        
+        if not saved_files:
+            return jsonify({'success': False, 'error': '没有有效的文件被保存'}), 400
+        
+        # 更新信息库状态
+        repository_manager.update_repository(name, {
+            'updated_at': datetime.now().isoformat()
+        })
+        
+        logging.info(f"成功上传 {len(saved_files)} 个文件到信息库 {name}")
+        
+        return jsonify({
+            'success': True,
+            'uploaded_files': saved_files,
+            'message': f"成功上传 {len(saved_files)} 个文件"
+        })
+    
+    except Exception as e:
+        logging.error(f"上传文件失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/upload_url', methods=['POST'])
+def upload_repository_url_file(name):
+    """上传URL文件到信息库"""
+    try:
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        data = request.json
+        urls = data.get('urls', [])
+        
+        if not urls:
+            return jsonify({'success': False, 'error': '没有提供URL'}), 400
+        
+        # 获取信息库目录
+        repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                     'data', 'crawled_data', name)
+        
+        # 确保目录存在
+        os.makedirs(repository_dir, exist_ok=True)
+        
+        # 创建URL文件
+        url_filename = f"urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        url_file_path = os.path.join(repository_dir, url_filename)
+        
+        with open(url_file_path, 'w', encoding='utf-8') as f:
+            for url in urls:
+                f.write(url.strip() + '\n')
+        
+        # 更新信息库状态
+        repository_manager.update_repository(name, {
+            'updated_at': datetime.now().isoformat()
+        })
+        
+        return jsonify({
+            'success': True,
+            'url_file': url_filename,
+            'urls_count': len(urls),
+            'message': f"成功创建包含 {len(urls)} 个URL的文件"
+        })
+    
+    except Exception as e:
+        logging.error(f"上传URL文件失败: {str(e)}")
         error_logs.add_error_log('repository', str(e), name)
         return jsonify({'success': False, 'error': str(e)}), 500
 

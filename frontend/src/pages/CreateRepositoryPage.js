@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  Card, Form, Input, Button, Radio, Upload, message, 
-  Typography, Divider, InputNumber, Alert, Spin, Tabs 
+  Card, Form, Input, Button, Upload, message, 
+  Typography, InputNumber, Alert, Spin, Tabs 
 } from 'antd';
 import { 
   UploadOutlined, 
@@ -12,7 +12,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { createRepository } from '../services/api';
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { TabPane } = Tabs;
 const { TextArea } = Input;
 
@@ -110,23 +110,45 @@ const CreateRepositoryPage = () => {
         return;
       }
 
+      console.log('准备上传的文件列表:', fileList);
+      console.log('文件详情:', fileList.map(f => ({ name: f.name, size: f.size, type: f.type })));
+
       // 构建FormData
       const formData = new FormData();
       formData.append('name', values.name);
       formData.append('description', values.description || '');
       formData.append('source', 'upload');
       
-      // 添加文件
-      fileList.forEach(file => {
-        formData.append('files', file.originFileObj);
+      // 添加文件 - 确保使用正确的字段名和文件对象
+      fileList.forEach((file, index) => {
+        console.log(`添加文件 ${index}:`, file.name, file.originFileObj || file);
+        if (file.originFileObj) {
+          formData.append('files', file.originFileObj);
+        } else {
+          // 如果没有originFileObj，直接使用file对象
+          formData.append('files', file);
+        }
       });
+
+      // 调试：打印FormData内容
+      console.log('FormData内容:');
+      for (let [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(key, `File: ${value.name} (${value.size} bytes)`);
+        } else {
+          console.log(key, value);
+        }
+      }
 
       const response = await createRepository(formData, true);
       if (response.success) {
-        message.success('信息库创建成功');
+        message.success(`信息库创建成功，已上传 ${fileList.length} 个文件`);
         
         // 确保获取到正确的信息库名称
         const repositoryName = response.repository_name || values.name;
+        
+        // 清空文件列表
+        setFileList([]);
         
         // 使用正确的信息库名称进行导航
         navigate(`/repositories/${repositoryName}`);
@@ -149,6 +171,8 @@ const CreateRepositoryPage = () => {
       setFileList(newFileList);
     },
     beforeUpload: file => {
+      console.log('beforeUpload 被调用，文件:', file.name, '当前文件列表长度:', fileList.length);
+      
       // 检查文件类型
       const isValidType = file.type === 'text/plain' || 
                           file.type === 'application/pdf' || 
@@ -158,16 +182,48 @@ const CreateRepositoryPage = () => {
                           file.name.endsWith('.html');
       
       if (!isValidType) {
-        message.error('只支持 .txt, .pdf, .html 格式的文件');
+        message.error(`文件 ${file.name} 格式不支持，只支持 .txt, .pdf, .html 格式`);
         return Upload.LIST_IGNORE;
       }
       
-      setFileList([...fileList, file]);
-      return false;
+      // 检查文件大小（限制为10MB）
+      const isLt10M = file.size / 1024 / 1024 < 10;
+      if (!isLt10M) {
+        message.error(`文件 ${file.name} 大小超过10MB限制`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 检查文件是否已存在
+      const fileExists = fileList.some(existingFile => 
+        existingFile.name === file.name && existingFile.size === file.size
+      );
+      if (fileExists) {
+        message.warning(`文件 ${file.name} 已存在，跳过重复文件`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 使用函数式更新确保正确添加文件
+      setFileList(prevFileList => {
+        const newFileList = [...prevFileList, file];
+        console.log('添加文件后的列表长度:', newFileList.length);
+        console.log('新文件列表:', newFileList.map(f => f.name));
+        return newFileList;
+      });
+      
+      return false; // 阻止自动上传
     },
     fileList,
     multiple: true,
-    directory: true
+    accept: '.txt,.pdf,.html',
+    showUploadList: {
+      showRemoveIcon: true,
+      showPreviewIcon: false,
+      showDownloadIcon: false
+    },
+    // 添加onChange处理，用于调试
+    onChange: (info) => {
+      console.log('Upload onChange:', info.fileList.length, '个文件');
+    }
   };
 
   return (
@@ -293,11 +349,20 @@ const CreateRepositoryPage = () => {
 
                 <Form.Item
                   label="上传文件"
-                  extra="支持 .txt, .pdf, .html 格式，可上传文件夹"
+                  extra={`支持 .txt, .pdf, .html 格式，可选择多个文件。已选择 ${fileList.length} 个文件`}
                 >
                   <Upload {...uploadProps}>
-                    <Button icon={<UploadOutlined />}>选择文件或文件夹</Button>
+                    <Button icon={<UploadOutlined />}>
+                      {fileList.length > 0 ? `已选择 ${fileList.length} 个文件，继续选择` : '选择文件'}
+                    </Button>
                   </Upload>
+                  {fileList.length > 0 && (
+                    <div style={{ marginTop: 8, color: '#666' }}>
+                      <Text type="secondary">
+                        文件列表：{fileList.map(f => f.name).join(', ')}
+                      </Text>
+                    </div>
+                  )}
                 </Form.Item>
 
                 <Form.Item>

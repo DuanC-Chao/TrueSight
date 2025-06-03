@@ -17,12 +17,12 @@ file_utils.py
 5. **其他**
    * `ensure_directory` 对空路径做校验；
    * 模块顶层导出 `__all__`；
-   * 对 HTML / PDF 解析兼容旧版 `PyPDF2`。
+   * 使用 PyMuPDF 作为主要 PDF 解析库。
 
 依赖
 ----
 ```bash
-pip install openpyxl html2text PyPDF2 beautifulsoup4
+pip install openpyxl html2text PyMuPDF beautifulsoup4
 ```
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ import hashlib
 import logging
 from typing import List, Optional
 
-import PyPDF2  # type: ignore
+import fitz  # PyMuPDF
 import html2text  # type: ignore
 from bs4 import BeautifulSoup  # type: ignore
 
@@ -141,26 +141,28 @@ def _read_txt(file_path: str) -> str:
 
 
 def _read_pdf(file_path: str) -> str:
-    # 兼容 PyPDF2 新旧版 API
+    """使用PyMuPDF读取PDF文件内容"""
     content: List[str] = []
-    with open(file_path, "rb") as fp:
-        try:
-            pdf_reader = PyPDF2.PdfReader(fp)  # PyPDF2>=3.x
-            pages = pdf_reader.pages
-            extract = lambda page: page.extract_text()
-        except AttributeError:
-            pdf_reader = PyPDF2.PdfFileReader(fp)  # type: ignore[attr-defined]
-            pages = [pdf_reader.getPage(i) for i in range(pdf_reader.numPages)]
-            extract = lambda page: page.extractText()
-
-        for page in pages:
-            try:
-                content.append(extract(page) or "")
-            except Exception:
-                # 若单页解析失败，仅记录日志，不中断整体流程
-                logging.debug("PDF 页面解析失败: %s 页", page)
-
-    return "\n\n".join(content)
+    
+    try:
+        doc = fitz.open(file_path)
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            page_text = page.get_text()
+            if page_text.strip():  # 只添加非空页面
+                content.append(page_text)
+        doc.close()
+        
+        if content:
+            logging.debug(f"使用 PyMuPDF 成功读取 PDF: {file_path}")
+            return "\n\n".join(content)
+        else:
+            logging.warning(f"PyMuPDF 未能从 PDF 中提取到文本内容: {file_path}")
+            return ""
+            
+    except Exception as e:
+        logging.error(f"PyMuPDF 读取 PDF 失败: {file_path} | {e}")
+        return ""
 
 
 def _read_html(file_path: str) -> str:

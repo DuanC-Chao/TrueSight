@@ -437,8 +437,8 @@ const RepositoryDetailPage = () => {
     }
   };
 
-  // 生成问答对
-  const handleGenerateQA = async () => {
+  // 基于原始文件生成问答对
+  const handleGenerateQAFromOriginal = async () => {
     try {
       // 首先检查是否已计算Token
       const hasTokens = repository.token_count_deepseek > 0 || 
@@ -460,7 +460,7 @@ const RepositoryDetailPage = () => {
         return;
       }
       
-      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001'}/api/processor/qa/generate`, {
+      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001'}/api/processor/qa/generate_from_original`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -478,14 +478,54 @@ const RepositoryDetailPage = () => {
       if (data.success && data.task_id) {
         setQaTaskId(data.task_id);
         setQaStatus({ status: 'running' });
-        message.success('问答对生成任务已启动');
+        message.success('基于原始文件的问答对生成任务已启动');
         // 轮询由useEffect统一管理，这里不再手动启动
       } else {
         throw new Error(data.error || '生成问答对失败');
       }
     } catch (error) {
-      console.error('生成问答对失败:', error);
-      message.error(error.message || '生成问答对失败');
+      console.error('基于原始文件生成问答对失败:', error);
+      message.error(error.message || '基于原始文件生成问答对失败');
+    }
+  };
+
+  // 基于总结文件生成问答对
+  const handleGenerateQAFromSummary = async () => {
+    try {
+      // 检查总结状态是否为同步
+      const isSummarySynced = summaryFiles && files && summaryFiles.length >= files.length;
+      
+      if (!isSummarySynced) {
+        message.error('总结状态未同步，请先生成总结文件');
+        return;
+      }
+      
+      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001'}/api/processor/qa/generate_from_summary`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repository_name: repository.name
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success && data.task_id) {
+        setQaTaskId(data.task_id);
+        setQaStatus({ status: 'running' });
+        message.success('基于总结文件的问答对生成任务已启动');
+        // 轮询由useEffect统一管理，这里不再手动启动
+      } else {
+        throw new Error(data.error || '生成问答对失败');
+      }
+    } catch (error) {
+      console.error('基于总结文件生成问答对失败:', error);
+      message.error(error.message || '基于总结文件生成问答对失败');
     }
   };
 
@@ -1028,11 +1068,11 @@ const RepositoryDetailPage = () => {
           <Tooltip title={crawlTaskId !== null && crawlStatus?.status === 'running' ? '爬取进行中，请等待爬取完成' : ''}>
             <Button 
               icon={<QuestionCircleOutlined />} 
-              onClick={handleGenerateQA}
+              onClick={handleGenerateQAFromOriginal}
               loading={qaTaskId !== null && qaStatus?.status === 'running'}
               disabled={qaTaskId !== null || (crawlTaskId !== null && crawlStatus?.status === 'running')}
             >
-              生成问答对
+              基于原始文件生成问答对
             </Button>
           </Tooltip>
           {qaTaskId && (
@@ -1054,6 +1094,25 @@ const RepositoryDetailPage = () => {
               )}
             </>
           )}
+          
+          <Tooltip title={
+            crawlTaskId !== null && crawlStatus?.status === 'running' ? '爬取进行中，请等待爬取完成' : 
+            !(summaryFiles && files && summaryFiles.length >= files.length) ? '总结状态未同步，请先生成总结文件' : 
+            ''
+          }>
+            <Button 
+              icon={<QuestionCircleOutlined />} 
+              onClick={handleGenerateQAFromSummary}
+              loading={qaTaskId !== null && qaStatus?.status === 'running'}
+              disabled={
+                qaTaskId !== null || 
+                (crawlTaskId !== null && crawlStatus?.status === 'running') ||
+                !(summaryFiles && files && summaryFiles.length >= files.length)
+              }
+            >
+              基于总结文件生成问答对
+            </Button>
+          </Tooltip>
           
           <Divider type="vertical" />
           

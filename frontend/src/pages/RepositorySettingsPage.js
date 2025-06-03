@@ -176,21 +176,34 @@ const RepositorySettingsPage = () => {
       return;
     }
 
+    console.log('准备上传的文件列表:', fileList);
+
     setUploading(true);
     try {
       const formData = new FormData();
-      fileList.forEach(file => {
-        formData.append('files[]', file);
+      fileList.forEach((file, index) => {
+        console.log(`添加文件 ${index}:`, file.name, file);
+        // 使用 'files' 作为字段名，与后端期望一致
+        formData.append('files', file);
       });
+
+      // 调试：打印FormData内容
+      console.log('FormData内容:');
+      for (let [key, value] of formData.entries()) {
+        console.log(key, value);
+      }
 
       const response = await uploadFiles(id, formData);
       if (response.success) {
         message.success(`成功上传 ${response.uploaded_files.length} 个文件`);
         setFileList([]);
+        // 刷新页面数据
+        fetchRepository();
       } else {
         message.error(`上传文件失败: ${response.error || '未知错误'}`);
       }
     } catch (error) {
+      console.error('上传文件失败:', error);
       message.error(`上传文件失败: ${error.error || '未知错误'}`);
     } finally {
       setUploading(false);
@@ -230,12 +243,59 @@ const RepositorySettingsPage = () => {
       setFileList(newFileList);
     },
     beforeUpload: file => {
-      setFileList([...fileList, file]);
-      return false;
+      console.log('设置页面 beforeUpload 被调用，文件:', file.name, '当前文件列表长度:', fileList.length);
+      
+      // 检查文件类型
+      const isValidType = file.type === 'text/plain' || 
+                          file.type === 'application/pdf' || 
+                          file.type === 'text/html' ||
+                          file.name.endsWith('.txt') ||
+                          file.name.endsWith('.pdf') ||
+                          file.name.endsWith('.html');
+      
+      if (!isValidType) {
+        message.error(`文件 ${file.name} 格式不支持，只支持 .txt, .pdf, .html 格式`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 检查文件大小（限制为10MB）
+      const isLt10M = file.size / 1024 / 1024 < 10;
+      if (!isLt10M) {
+        message.error(`文件 ${file.name} 大小超过10MB限制`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 检查文件是否已存在
+      const fileExists = fileList.some(existingFile => 
+        existingFile.name === file.name && existingFile.size === file.size
+      );
+      if (fileExists) {
+        message.warning(`文件 ${file.name} 已存在，跳过重复文件`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 使用函数式更新确保正确添加文件
+      setFileList(prevFileList => {
+        const newFileList = [...prevFileList, file];
+        console.log('设置页面添加文件后的列表长度:', newFileList.length);
+        console.log('设置页面新文件列表:', newFileList.map(f => f.name));
+        return newFileList;
+      });
+      
+      return false; // 阻止自动上传
     },
     fileList,
     multiple: true,
-    accept: '.txt,.pdf,.html'
+    accept: '.txt,.pdf,.html',
+    showUploadList: {
+      showRemoveIcon: true,
+      showPreviewIcon: false,
+      showDownloadIcon: false
+    },
+    // 添加onChange处理，用于调试
+    onChange: (info) => {
+      console.log('设置页面 Upload onChange:', info.fileList.length, '个文件');
+    }
   };
 
   // 处理编辑文件类型映射
@@ -593,11 +653,21 @@ const RepositorySettingsPage = () => {
             <Row gutter={24}>
               <Col span={12}>
                 <Title level={5}>上传本地文件</Title>
-                <Paragraph>支持 .txt, .pdf, .html 格式文件</Paragraph>
+                <Paragraph>支持 .txt, .pdf, .html 格式文件，可选择多个文件</Paragraph>
                 
                 <Upload {...uploadProps}>
-                  <Button icon={<UploadOutlined />}>选择文件</Button>
+                  <Button icon={<UploadOutlined />}>
+                    {fileList.length > 0 ? `已选择 ${fileList.length} 个文件，继续选择` : '选择文件'}
+                  </Button>
                 </Upload>
+                
+                {fileList.length > 0 && (
+                  <div style={{ marginTop: 8, marginBottom: 16, color: '#666' }}>
+                    <Text type="secondary">
+                      文件列表：{fileList.map(f => f.name).join(', ')}
+                    </Text>
+                  </div>
+                )}
                 
                 <div style={{ marginTop: 16 }}>
                   <Button
@@ -606,7 +676,7 @@ const RepositorySettingsPage = () => {
                     disabled={fileList.length === 0}
                     loading={uploading}
                   >
-                    {uploading ? '上传中...' : '开始上传'}
+                    {uploading ? '上传中...' : `开始上传${fileList.length > 0 ? ` (${fileList.length}个文件)` : ''}`}
                   </Button>
                 </div>
               </Col>

@@ -136,8 +136,31 @@ def _token_calculation_worker(task_id, repository_name):
                 except Exception as e:
                     logging.error(f"删除旧文件失败: {file_path}, 错误: {str(e)}")
 
-        # 获取所有文本文件
-        files = file_utils.list_files(repository_dir, ['.txt', '.pdf', '.html', '.xlsx'])
+        # 获取所有支持的文件类型
+        supported_file_types = config.get('supported_file_types', ['.txt', '.pdf', '.html'])
+        all_files = file_utils.list_files(repository_dir, supported_file_types)
+        
+        # 过滤掉token_count文件夹下的文件和其他需要忽略的文件
+        filtered_files = []
+        ignored_filenames = config.get('ignored_filenames', [])
+        
+        for file_path in all_files:
+            file_name = os.path.basename(file_path)
+            
+            # 检查是否在token_count文件夹中
+            if 'token_count' in file_path:
+                logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                continue
+                
+            # 检查是否在忽略列表中
+            if file_name in ignored_filenames:
+                logging.info(f"跳过忽略列表中的文件: {file_name}")
+                continue
+                
+            filtered_files.append(file_path)
+        
+        files = filtered_files
+        logging.info(f"找到 {len(files)} 个需要处理的文件（已过滤token_count和忽略文件）")
 
         # 更新任务状态
         with process_lock:
@@ -289,9 +312,32 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
                                  'data', config.get('summary_output_dir', 'summarizer_output'), repository_name)
         os.makedirs(output_dir, exist_ok=True)
         
-        # 获取所有文本文件
-        files = file_utils.list_files(repository_dir, ['.txt'])
+        # 获取所有支持的文件类型
+        supported_file_types = config.get('supported_file_types', ['.txt', '.pdf', '.html'])
+        all_files = file_utils.list_files(repository_dir, supported_file_types)
         
+        # 过滤掉token_count文件夹下的文件和其他需要忽略的文件
+        filtered_files = []
+        ignored_filenames = config.get('ignored_filenames', [])
+        
+        for file_path in all_files:
+            file_name = os.path.basename(file_path)
+            
+            # 检查是否在token_count文件夹中
+            if 'token_count' in file_path:
+                logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                continue
+                
+            # 检查是否在忽略列表中
+            if file_name in ignored_filenames:
+                logging.info(f"跳过忽略列表中的文件: {file_name}")
+                continue
+                
+            filtered_files.append(file_path)
+        
+        files = filtered_files
+        logging.info(f"找到 {len(files)} 个需要处理的文件（已过滤token_count和忽略文件）")
+
         # 更新任务状态
         with process_lock:
             process_status[task_id]['total_files'] = len(files)
@@ -321,6 +367,17 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
         for file_path in files:
             try:
                 file_name = os.path.basename(file_path)
+                
+                # 检查是否在token_count文件夹中
+                if 'token_count' in file_path:
+                    logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                    continue
+                
+                # 检查是否在忽略列表中
+                ignored_filenames = config.get('ignored_filenames', [])
+                if file_name in ignored_filenames:
+                    logging.info(f"文件在忽略列表中，跳过处理: {file_name}")
+                    continue
                 
                 # 读取文件内容
                 content = file_utils.read_file(file_path)
@@ -521,40 +578,62 @@ def _generate_summary(content, llm_config=None):
             'max_tokens': merged_config.get('max_tokens', 2000)
         }
         
-        # 发送请求
-        response = requests.post(api_base_url, headers=headers, json=data, timeout=30)
+        # 发送请求，增加超时时间并添加重试机制
+        max_retries = 3
+        timeout = 900  # 15分钟
         
-        # 检查响应
-        if response.status_code != 200:
-            error_msg = f"API请求失败: {response.status_code} {response.text}"
-            logging.error(error_msg)
-            raise Exception(error_msg)
-        
-        # 解析响应
-        response_data = response.json()
-        
-        # 提取总结
-        if provider == 'openai' or provider == 'deepseek' or provider == 'qwen':
-            summary = response_data['choices'][0]['message']['content']
-        else:
-            summary = response_data['choices'][0]['message']['content']
-        
-        # 清理和格式化总结
-        summary = summary.strip()
-        
-        return summary
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(api_base_url, headers=headers, json=data, timeout=timeout)
+                
+                # 检查响应
+                if response.status_code != 200:
+                    error_msg = f"API请求失败: {response.status_code} {response.text}"
+                    logging.error(error_msg)
+                    raise Exception(error_msg)
+                
+                # 解析响应
+                response_data = response.json()
+                
+                # 提取总结
+                if provider == 'openai' or provider == 'deepseek' or provider == 'qwen':
+                    summary = response_data['choices'][0]['message']['content']
+                else:
+                    summary = response_data['choices'][0]['message']['content']
+                
+                # 清理和格式化总结
+                summary = summary.strip()
+                
+                return summary
+                
+            except requests.exceptions.Timeout as e:
+                logging.warning(f"总结生成超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"总结生成超时，已重试 {max_retries} 次")
+                # 等待一段时间后重试
+                import time
+                time.sleep(5 * (attempt + 1))  # 递增等待时间
+                
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"网络请求失败，已重试 {max_retries} 次: {str(e)}")
+                # 等待一段时间后重试
+                import time
+                time.sleep(3 * (attempt + 1))
     
     except Exception as e:
         logging.error(f"生成总结失败: {str(e)}")
         raise
 
-def start_qa_generation(repository_name, llm_config=None):
+def start_qa_generation(repository_name, llm_config=None, use_summary_files=None):
     """
     开始问答对生成任务
     
     Args:
         repository_name: 信息库名称
         llm_config: LLM配置（可选）
+        use_summary_files: 是否使用总结文件（True=基于总结，False=基于原始文件，None=自动判断）
         
     Returns:
         task_id: 任务ID
@@ -575,22 +654,23 @@ def start_qa_generation(repository_name, llm_config=None):
         'total_files': 0,
         'processed_files': 0,
         'total_qa_pairs': 0,
+        'use_summary_files': use_summary_files,
         'error': None
     }
     
     # 创建并启动处理线程
     process_thread = threading.Thread(
         target=_qa_generation_worker,
-        args=(task_id, repository_name, llm_config)
+        args=(task_id, repository_name, llm_config, use_summary_files)
     )
     process_thread.daemon = True
     process_thread.start()
     
-    logging.info(f"问答对生成任务 {task_id} 已启动，信息库: {repository_name}")
+    logging.info(f"问答对生成任务 {task_id} 已启动，信息库: {repository_name}, 使用总结文件: {use_summary_files}")
     
     return task_id
 
-def _qa_generation_worker(task_id, repository_name, llm_config=None):
+def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary_files=None):
     """
     问答对生成工作线程
     
@@ -598,6 +678,7 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None):
         task_id: 任务ID
         repository_name: 信息库名称
         llm_config: LLM配置（可选）
+        use_summary_files: 是否使用总结文件（True=基于总结，False=基于原始文件，None=自动判断）
     """
     try:
         # 更新任务状态为运行中
@@ -619,37 +700,145 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None):
         os.makedirs(json_output_dir, exist_ok=True)
         os.makedirs(csv_output_dir, exist_ok=True)
         
+        # 如果明确指定了生成模式，清除现有的问答对文件
+        if use_summary_files is not None:
+            logging.info(f"清除现有问答对文件，准备基于{'总结文件' if use_summary_files else '原始文件'}生成")
+            # 清除JSON输出目录中的问答对文件
+            for filename in os.listdir(json_output_dir):
+                if filename.endswith('.json') and filename != 'content_hashes.json':
+                    file_path = os.path.join(json_output_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        logging.info(f"已删除旧问答对文件: {filename}")
+                    except Exception as e:
+                        logging.error(f"删除文件失败: {file_path}, 错误: {str(e)}")
+            
+            # 清除CSV输出目录中的问答对文件
+            for filename in os.listdir(csv_output_dir):
+                if filename.endswith('.csv'):
+                    file_path = os.path.join(csv_output_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        logging.info(f"已删除旧问答对文件: {filename}")
+                    except Exception as e:
+                        logging.error(f"删除文件失败: {file_path}, 错误: {str(e)}")
+            
+            # 清除内容哈希记录
+            content_hashes_path = os.path.join(json_output_dir, 'content_hashes.json')
+            if os.path.exists(content_hashes_path):
+                try:
+                    os.remove(content_hashes_path)
+                    logging.info("已清除内容哈希记录")
+                except Exception as e:
+                    logging.error(f"删除内容哈希记录失败: {str(e)}")
+        
         # 检查是否有总结文件，优先使用总结文件
         summary_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
                                   'data', 'summarizer_output', repository_name)
         
-        use_summary_files = False
         files = []
         
-        if os.path.exists(summary_dir):
-            # 获取总结文件
-            summary_files = file_utils.list_files(summary_dir, ['.txt'])
-            # 过滤掉不需要的文件
-            filtered_summary_files = []
-            for file_path in summary_files:
-                file_name = os.path.basename(file_path)
-                # 跳过特殊文件
-                if file_name in ['all_summaries.txt', 'content_hashes.json'] or \
-                   file_name.startswith('token_count_'):
-                    continue
-                if '_summarized.txt' in file_name or file_name.endswith('_summary.txt'):
-                    filtered_summary_files.append(file_path)
-            
-            if filtered_summary_files:
-                files = filtered_summary_files
-                use_summary_files = True
-                logging.info(f"使用总结文件进行QA生成，共 {len(files)} 个文件")
+        # 根据use_summary_files参数明确选择文件源
+        if use_summary_files is True:
+            # 强制使用总结文件
+            if os.path.exists(summary_dir):
+                summary_files = file_utils.list_files(summary_dir, ['.txt'])
+                # 过滤掉不需要的文件
+                filtered_summary_files = []
+                for file_path in summary_files:
+                    file_name = os.path.basename(file_path)
+                    # 跳过特殊文件
+                    if file_name in ['all_summaries.txt', 'content_hashes.json'] or \
+                       file_name.startswith('token_count_'):
+                        continue
+                    if '_summarized.txt' in file_name or file_name.endswith('_summary.txt'):
+                        filtered_summary_files.append(file_path)
+                
+                if filtered_summary_files:
+                    files = filtered_summary_files
+                    use_summary_files = True
+                    logging.info(f"强制使用总结文件进行QA生成，共 {len(files)} 个文件")
+                else:
+                    raise FileNotFoundError("未找到总结文件，请先生成总结")
+            else:
+                raise FileNotFoundError("总结目录不存在，请先生成总结")
         
-        if not files:
-            # 使用原始文件
-            files = file_utils.list_files(repository_dir, ['.txt'])
+        elif use_summary_files is False:
+            # 强制使用原始文件
+            supported_file_types = config.get('supported_file_types', ['.txt', '.pdf', '.html'])
+            all_files = file_utils.list_files(repository_dir, supported_file_types)
+            
+            # 过滤掉token_count文件夹下的文件和其他需要忽略的文件
+            filtered_files = []
+            ignored_filenames = config.get('ignored_filenames', [])
+            
+            for file_path in all_files:
+                file_name = os.path.basename(file_path)
+                
+                # 检查是否在token_count文件夹中
+                if 'token_count' in file_path:
+                    logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                    continue
+                    
+                # 检查是否在忽略列表中
+                if file_name in ignored_filenames:
+                    logging.info(f"跳过忽略列表中的文件: {file_name}")
+                    continue
+                    
+                filtered_files.append(file_path)
+            
+            files = filtered_files
             use_summary_files = False
-            logging.info(f"使用原始文件进行QA生成，共 {len(files)} 个文件")
+            logging.info(f"强制使用原始文件进行QA生成，共 {len(files)} 个文件（已过滤token_count和忽略文件）")
+        
+        else:
+            # 自动判断模式（保持原有逻辑）
+            if os.path.exists(summary_dir):
+                # 获取总结文件
+                summary_files = file_utils.list_files(summary_dir, ['.txt'])
+                # 过滤掉不需要的文件
+                filtered_summary_files = []
+                for file_path in summary_files:
+                    file_name = os.path.basename(file_path)
+                    # 跳过特殊文件
+                    if file_name in ['all_summaries.txt', 'content_hashes.json'] or \
+                       file_name.startswith('token_count_'):
+                        continue
+                    if '_summarized.txt' in file_name or file_name.endswith('_summary.txt'):
+                        filtered_summary_files.append(file_path)
+                
+                if filtered_summary_files:
+                    files = filtered_summary_files
+                    use_summary_files = True
+                    logging.info(f"自动选择总结文件进行QA生成，共 {len(files)} 个文件")
+            
+            if not files:
+                # 使用原始文件
+                supported_file_types = config.get('supported_file_types', ['.txt', '.pdf', '.html'])
+                all_files = file_utils.list_files(repository_dir, supported_file_types)
+                
+                # 过滤掉token_count文件夹下的文件和其他需要忽略的文件
+                filtered_files = []
+                ignored_filenames = config.get('ignored_filenames', [])
+                
+                for file_path in all_files:
+                    file_name = os.path.basename(file_path)
+                    
+                    # 检查是否在token_count文件夹中
+                    if 'token_count' in file_path:
+                        logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                        continue
+                        
+                    # 检查是否在忽略列表中
+                    if file_name in ignored_filenames:
+                        logging.info(f"跳过忽略列表中的文件: {file_name}")
+                        continue
+                        
+                    filtered_files.append(file_path)
+                
+                files = filtered_files
+                use_summary_files = False
+                logging.info(f"自动选择原始文件进行QA生成，共 {len(files)} 个文件（已过滤token_count和忽略文件）")
         
         # 更新任务状态
         with process_lock:
@@ -718,6 +907,11 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None):
         for file_path in files:
             try:
                 file_name = os.path.basename(file_path)
+                
+                # 检查是否在token_count文件夹中
+                if 'token_count' in file_path:
+                    logging.info(f"跳过token_count文件夹中的文件: {file_name}")
+                    continue
                 
                 # 检查是否在忽略列表中
                 ignored_filenames = config.get('ignored_filenames', [])
@@ -1131,7 +1325,7 @@ def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None):
         }
         
         # 发送请求
-        response = requests.post(api_base_url, headers=headers, json=data, timeout=60)
+        response = requests.post(api_base_url, headers=headers, json=data, timeout=900)
         
         # 检查响应
         if response.status_code != 200:
@@ -1325,7 +1519,7 @@ def _reduce_qa_pairs_llm(qa_pairs, llm_config=None):
         }
         
         # 发送请求
-        response = requests.post(api_base_url, headers=headers, json=data, timeout=60)
+        response = requests.post(api_base_url, headers=headers, json=data, timeout=900)
         
         # 检查响应
         if response.status_code != 200:
@@ -1458,7 +1652,7 @@ def _evaluate_qa_pairs_llm(qa_pairs, llm_config=None):
         }
         
         # 发送请求
-        response = requests.post(api_base_url, headers=headers, json=data, timeout=60)
+        response = requests.post(api_base_url, headers=headers, json=data, timeout=900)
         
         # 检查响应
         if response.status_code != 200:
