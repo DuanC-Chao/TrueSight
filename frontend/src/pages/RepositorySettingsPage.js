@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Form, Input, Button, Card, Typography, message, 
-  Select, Switch, Radio, Divider, Tabs, Space,
+  Select, Switch, Radio, Tabs, Space,
   Upload, Alert, Spin, InputNumber, Row, Col,
-  Table, Modal
+  Table, Modal, Collapse
 } from 'antd';
 import { 
   SaveOutlined, 
@@ -12,7 +12,9 @@ import {
   UploadOutlined,
   LinkOutlined,
   EditOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  UndoOutlined,
+  SyncOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -23,13 +25,18 @@ import {
   uploadFiles,
   uploadUrlFile,
   getFileTypeChunkMapping,
-  updateFileTypeChunkMapping
+  updateFileTypeChunkMapping,
+  getRepositoryPromptConfig,
+  updateRepositoryPromptConfig,
+  resetRepositoryPromptConfig,
+  syncRepositoryPromptConfigFromGlobal
 } from '../services/api';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
 const { TabPane } = Tabs;
 const { TextArea } = Input;
+const { Panel } = Collapse;
 
 /**
  * 信息库设置页面
@@ -51,6 +58,9 @@ const RepositorySettingsPage = () => {
   const [editingFileType, setEditingFileType] = useState(null);
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [promptConfig, setPromptConfig] = useState({});
+  const [promptForm] = Form.useForm();
+  const [promptLoading, setPromptLoading] = useState(false);
 
   // 获取信息库信息
   const fetchRepository = async () => {
@@ -96,9 +106,23 @@ const RepositorySettingsPage = () => {
     }
   };
 
+  // 获取Prompt配置
+  const fetchPromptConfig = async () => {
+    try {
+      const response = await getRepositoryPromptConfig(id);
+      if (response.success) {
+        setPromptConfig(response.prompt_config || {});
+        promptForm.setFieldsValue(response.prompt_config || {});
+      }
+    } catch (error) {
+      console.error('获取Prompt配置失败:', error);
+    }
+  };
+
   useEffect(() => {
     fetchRepository();
     fetchFileTypeMapping();
+    fetchPromptConfig();
   }, [id]);
 
   // 保存基本设置
@@ -181,21 +205,85 @@ const RepositorySettingsPage = () => {
     setUploading(true);
     try {
       const formData = new FormData();
+      let validFileCount = 0;
+      
       fileList.forEach((file, index) => {
-        console.log(`添加文件 ${index}:`, file.name, file);
-        // 使用 'files' 作为字段名，与后端期望一致
-        formData.append('files', file);
+        console.log(`处理文件 ${index}:`, file.name);
+        
+        // 获取实际文件对象，处理不同浏览器的差异
+        let actualFile = file;
+        
+        // 处理Antd Upload组件的文件对象
+        if (file.originFileObj) {
+          actualFile = file.originFileObj;
+        } else if (file.file) {
+          actualFile = file.file;
+        }
+        
+        // 确保文件对象有效
+        if (actualFile instanceof File || actualFile instanceof Blob) {
+          // 处理文件名，确保跨平台兼容性
+          let fileName = actualFile.name || file.name || `file_${index}`;
+          
+          // 清理文件名中的危险字符（Windows特别敏感）
+          fileName = fileName.replace(/[\\/:*?"<>|]/g, '_');
+          
+          // 确保文件有扩展名
+          if (!fileName.includes('.')) {
+            // 根据MIME类型推断扩展名
+            const mimeType = actualFile.type || file.type || '';
+            if (mimeType === 'text/plain') {
+              fileName += '.txt';
+            } else if (mimeType === 'application/pdf') {
+              fileName += '.pdf';
+            } else if (mimeType === 'text/html') {
+              fileName += '.html';
+            } else {
+              // 尝试从原始文件名推断
+              const originalExt = (file.name || '').split('.').pop();
+              if (originalExt && ['txt', 'pdf', 'html'].includes(originalExt.toLowerCase())) {
+                fileName += '.' + originalExt.toLowerCase();
+              } else {
+                fileName += '.txt'; // 默认扩展名
+              }
+            }
+          }
+          
+          // 创建新的File对象以确保一致性（解决某些浏览器的兼容性问题）
+          const fileToAppend = new File([actualFile], fileName, {
+            type: actualFile.type || 'application/octet-stream',
+            lastModified: actualFile.lastModified || Date.now()
+          });
+          
+          formData.append('files', fileToAppend);
+          validFileCount++;
+          console.log(`添加文件 ${index}: ${fileName} (${fileToAppend.size} bytes, ${fileToAppend.type})`);
+        } else {
+          console.error(`文件 ${index} 不是有效的File对象:`, actualFile);
+          message.error(`文件 ${file.name || index} 格式无效，跳过上传`);
+        }
       });
+
+      // 验证是否有有效文件
+      if (validFileCount === 0) {
+        message.error('没有有效的文件可上传');
+        setUploading(false);
+        return;
+      }
 
       // 调试：打印FormData内容
       console.log('FormData内容:');
       for (let [key, value] of formData.entries()) {
-        console.log(key, value);
+        if (value instanceof File) {
+          console.log(key, `File: ${value.name} (${value.size} bytes, ${value.type})`);
+        } else {
+          console.log(key, value);
+        }
       }
 
       const response = await uploadFiles(id, formData);
       if (response.success) {
-        message.success(`成功上传 ${response.uploaded_files.length} 个文件`);
+        message.success(`成功上传 ${validFileCount} 个文件`);
         setFileList([]);
         // 刷新页面数据
         fetchRepository();
@@ -234,7 +322,7 @@ const RepositorySettingsPage = () => {
     }
   };
 
-  // 文件上传属性
+  // 增强的文件上传属性
   const uploadProps = {
     onRemove: file => {
       const index = fileList.indexOf(file);
@@ -243,34 +331,56 @@ const RepositorySettingsPage = () => {
       setFileList(newFileList);
     },
     beforeUpload: file => {
-      console.log('设置页面 beforeUpload 被调用，文件:', file.name, '当前文件列表长度:', fileList.length);
+      console.log('设置页面 beforeUpload 被调用，文件:', file.name, '大小:', file.size, '类型:', file.type);
+      console.log('文件对象详情:', file);
       
-      // 检查文件类型
-      const isValidType = file.type === 'text/plain' || 
-                          file.type === 'application/pdf' || 
-                          file.type === 'text/html' ||
-                          file.name.endsWith('.txt') ||
-                          file.name.endsWith('.pdf') ||
-                          file.name.endsWith('.html');
+      // 更严格的文件类型检查，考虑Windows/macOS差异
+      const fileName = file.name.toLowerCase();
+      const fileType = file.type || '';
+      
+      // 多重验证文件类型
+      const isValidType = (
+        // 通过扩展名验证
+        fileName.endsWith('.txt') || 
+        fileName.endsWith('.pdf') || 
+        fileName.endsWith('.html') ||
+        // 通过MIME类型验证
+        fileType === 'text/plain' ||
+        fileType === 'application/pdf' ||
+        fileType === 'text/html' ||
+        // Windows可能的MIME类型变体
+        fileType === 'application/x-pdf' ||
+        fileType === 'text/htm'
+      );
       
       if (!isValidType) {
         message.error(`文件 ${file.name} 格式不支持，只支持 .txt, .pdf, .html 格式`);
         return Upload.LIST_IGNORE;
       }
       
-      // 检查文件大小（限制为10MB）
-      const isLt10M = file.size / 1024 / 1024 < 10;
-      if (!isLt10M) {
-        message.error(`文件 ${file.name} 大小超过10MB限制`);
+      // 文件大小检查（考虑不同系统的精度差异）
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 10) {
+        message.error(`文件 ${file.name} 大小超过10MB限制 (当前: ${fileSizeMB.toFixed(2)}MB)`);
         return Upload.LIST_IGNORE;
       }
       
-      // 检查文件是否已存在
-      const fileExists = fileList.some(existingFile => 
-        existingFile.name === file.name && existingFile.size === file.size
-      );
+      // 检查文件是否已存在（增强比较逻辑）
+      const fileExists = fileList.some(existingFile => {
+        const existingName = existingFile.name || existingFile.originFileObj?.name || '';
+        const existingSize = existingFile.size || existingFile.originFileObj?.size || 0;
+        return existingName === file.name && Math.abs(existingSize - file.size) < 100; // 允许小的尺寸差异
+      });
+      
       if (fileExists) {
         message.warning(`文件 ${file.name} 已存在，跳过重复文件`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 验证文件对象的有效性
+      if (!(file instanceof File) && !(file instanceof Blob)) {
+        console.error('无效的文件对象:', file);
+        message.error(`文件 ${file.name} 对象无效`);
         return Upload.LIST_IGNORE;
       }
       
@@ -286,15 +396,34 @@ const RepositorySettingsPage = () => {
     },
     fileList,
     multiple: true,
-    accept: '.txt,.pdf,.html',
+    // 修复Windows文件选择器问题：简化accept属性，只使用扩展名
+    accept: '.txt,.pdf,.html,.htm',
     showUploadList: {
       showRemoveIcon: true,
       showPreviewIcon: false,
       showDownloadIcon: false
     },
-    // 添加onChange处理，用于调试
+    // 增强的onChange处理
     onChange: (info) => {
       console.log('设置页面 Upload onChange:', info.fileList.length, '个文件');
+      console.log('文件状态变化:', info.file.status);
+      
+      // 处理文件状态变化，确保跨平台一致性
+      if (info.file.status === 'error') {
+        message.error(`文件 ${info.file.name} 处理失败`);
+      }
+    },
+    // 添加自定义文件列表渲染来处理显示问题
+    itemRender: (originNode, file, fileList, actions) => {
+      // 确保文件名正确显示，特别是在Windows上
+      const displayName = file.name || file.originFileObj?.name || '未知文件';
+      return React.cloneElement(originNode, {
+        ...originNode.props,
+        children: React.cloneElement(originNode.props.children, {
+          ...originNode.props.children.props,
+          title: displayName
+        })
+      });
     }
   };
 
@@ -422,6 +551,62 @@ const RepositorySettingsPage = () => {
     chunkMethod: config.chunk_method || 'naive',
     tokenNum: config.parser_config?.chunk_token_num
   }));
+
+  // 保存Prompt配置
+  const handleSavePromptConfig = async (values) => {
+    setPromptLoading(true);
+    try {
+      const response = await updateRepositoryPromptConfig(id, values);
+      if (response.success) {
+        message.success('Prompt配置已保存');
+        setPromptConfig(values);
+      } else {
+        message.error(`保存Prompt配置失败: ${response.error || '未知错误'}`);
+      }
+    } catch (error) {
+      message.error(`保存Prompt配置失败: ${error.error || '未知错误'}`);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  // 重置Prompt配置
+  const handleResetPromptConfig = async () => {
+    setPromptLoading(true);
+    try {
+      const response = await resetRepositoryPromptConfig(id);
+      if (response.success) {
+        message.success('Prompt配置已重置为默认值');
+        setPromptConfig(response.prompt_config);
+        promptForm.setFieldsValue(response.prompt_config);
+      } else {
+        message.error(`重置Prompt配置失败: ${response.error || '未知错误'}`);
+      }
+    } catch (error) {
+      message.error(`重置Prompt配置失败: ${error.error || '未知错误'}`);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  // 从全局配置同步
+  const handleSyncFromGlobal = async () => {
+    setPromptLoading(true);
+    try {
+      const response = await syncRepositoryPromptConfigFromGlobal(id);
+      if (response.success) {
+        message.success('已从全局配置同步Prompt设置');
+        setPromptConfig(response.prompt_config);
+        promptForm.setFieldsValue(response.prompt_config);
+      } else {
+        message.error(`同步失败: ${response.error || '未知错误'}`);
+      }
+    } catch (error) {
+      message.error(`同步失败: ${error.error || '未知错误'}`);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
 
   if (!repository && loading) {
     return (
@@ -718,6 +903,143 @@ const RepositorySettingsPage = () => {
               dataSource={fileTypeMappingData}
               rowKey="key"
             />
+          </Card>
+        </TabPane>
+
+        <TabPane tab={<span><SettingOutlined />Prompt配置</span>} key="6">
+          <Card className="flat-card">
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Title level={5}>Prompt配置</Title>
+                <Text type="secondary">
+                  配置此信息库专用的Prompt设置，将覆盖全局配置。留空则使用全局配置。
+                </Text>
+              </div>
+              <Space>
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={handleSyncFromGlobal}
+                  loading={promptLoading}
+                >
+                  同步全局配置
+                </Button>
+                <Button
+                  icon={<UndoOutlined />}
+                  onClick={handleResetPromptConfig}
+                  loading={promptLoading}
+                >
+                  重置为默认值
+                </Button>
+              </Space>
+            </div>
+
+            <Form
+              form={promptForm}
+              layout="vertical"
+              onFinish={handleSavePromptConfig}
+              initialValues={promptConfig}
+            >
+              <Collapse defaultActiveKey={['summary']}>
+                <Panel header="总结配置" key="summary">
+                  <Form.Item
+                    label="总结提示词"
+                    name="summary_prompt"
+                    tooltip="用于生成内容总结的提示词"
+                  >
+                    <TextArea rows={3} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="总结系统提示词"
+                    name="summary_system_prompt"
+                    tooltip="总结任务的系统角色设定"
+                  >
+                    <TextArea rows={3} placeholder="留空使用全局配置" />
+                  </Form.Item>
+                </Panel>
+
+                <Panel header="问答生成 - 分块阶段" key="chunk">
+                  <Form.Item
+                    label="分块大小"
+                    name={['qa_stages', 'chunk', 'chunk_size']}
+                    tooltip="每个文本块的Token数量"
+                  >
+                    <InputNumber min={100} max={10000} style={{ width: 200 }} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="分块重叠"
+                    name={['qa_stages', 'chunk', 'chunk_overlap']}
+                    tooltip="相邻文本块之间的重叠Token数量"
+                  >
+                    <InputNumber min={0} max={1000} style={{ width: 200 }} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="提示词"
+                    name={['qa_stages', 'chunk', 'prompt']}
+                    tooltip="用于生成问答对的提示词"
+                  >
+                    <TextArea rows={4} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="系统提示词"
+                    name={['qa_stages', 'chunk', 'system_prompt']}
+                    tooltip="问答对生成任务的系统角色设定"
+                  >
+                    <TextArea rows={3} placeholder="留空使用全局配置" />
+                  </Form.Item>
+                </Panel>
+
+                <Panel header="问答生成 - 去重与筛选阶段" key="reduce">
+                  <Form.Item
+                    label="提示词"
+                    name={['qa_stages', 'reduce', 'prompt']}
+                    tooltip="用于去重和筛选问答对的提示词"
+                  >
+                    <TextArea rows={4} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="系统提示词"
+                    name={['qa_stages', 'reduce', 'system_prompt']}
+                    tooltip="去重筛选任务的系统角色设定"
+                  >
+                    <TextArea rows={3} placeholder="留空使用全局配置" />
+                  </Form.Item>
+                </Panel>
+
+                <Panel header="问答生成 - 质量评估阶段" key="evaluate">
+                  <Form.Item
+                    label="提示词"
+                    name={['qa_stages', 'evaluate', 'prompt']}
+                    tooltip="用于评估问答对质量的提示词"
+                  >
+                    <TextArea rows={4} placeholder="留空使用全局配置" />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="系统提示词"
+                    name={['qa_stages', 'evaluate', 'system_prompt']}
+                    tooltip="质量评估任务的系统角色设定"
+                  >
+                    <TextArea rows={3} placeholder="留空使用全局配置" />
+                  </Form.Item>
+                </Panel>
+              </Collapse>
+
+              <div style={{ textAlign: 'right', marginTop: 16 }}>
+                <Button 
+                  type="primary" 
+                  htmlType="submit" 
+                  icon={<SaveOutlined />}
+                  loading={promptLoading}
+                >
+                  保存Prompt配置
+                </Button>
+              </div>
+            </Form>
           </Card>
         </TabPane>
       </Tabs>

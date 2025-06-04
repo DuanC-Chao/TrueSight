@@ -433,5 +433,423 @@
       "updated_files": 0,
       "total_qa_pairs": 1
     }
+  },
+  "token_1748952028": {
+    "id": "token_1748952028",
+    "type": "token",
+    "repository_name": "123",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:00:28.474156",
+    "updated_at": "2025-06-03T20:00:32.964908",
+    "started_at": "2025-06-03T20:00:28.477315",
+    "completed_at": "2025-06-03T20:00:32.964906",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 43382,
+        "token_count_deepseek": 36322,
+        "token_count_jina": 38326
+      }
+    },
+    "metadata": {
+      "processed_files": 3
+    }
+  },
+  "summary_1748952426": {
+    "id": "summary_1748952426",
+    "type": "summary",
+    "repository_name": "123",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:07:06.977273",
+    "updated_at": "2025-06-03T20:08:55.105869",
+    "started_at": "2025-06-03T20:07:06.986479",
+    "completed_at": "2025-06-03T20:08:55.105868",
+    "error": null,
+    "result": {
+      "total_files": 3,
+      "processed_files": 3,
+      "skipped_files": 0,
+      "new_files": 3,
+      "updated_files": 0
+    },
+    "metadata": {
+      "processed_files": 3,
+      "skipped_files": 0,
+      "new_files": 3,
+      "updated_files": 0
+    }
+  },
+  "token_1748953235": {
+    "id": "token_1748953235",
+    "type": "token",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:20:35.463648",
+    "updated_at": "2025-06-03T20:20:35.754537",
+    "started_at": "2025-06-03T20:20:35.472900",
+    "completed_at": "2025-06-03T20:20:35.754536",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 6338,
+        "token_count_deepseek": 4846,
+        "token_count_jina": 5428
+      }
+    },
+    "metadata": {
+      "processed_files": 1
+    }
+  },
+  "qa_1748953247": {
+    "id": "qa_1748953247",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:20:47.211990",
+    "updated_at": "2025-06-03T20:24:39.407847",
+    "started_at": "2025-06-03T20:20:47.214174",
+    "completed_at": "2025-06-03T20:24:39.407839",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5
+    }
+  },
+  "qa_1748953968": {
+    "id": "qa_1748953968",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:32:48.364661",
+    "updated_at": "2025-06-03T20:37:18.098277",
+    "started_at": "2025-06-03T20:32:48.369204",
+    "completed_at": "2025-06-03T20:37:18.098272",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5
+    }
+  },
+  "qa_1748954525": {
+    "id": "qa_1748954525",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T20:42:05.729873",
+    "updated_at": "2025-06-03T20:45:57.127535",
+    "started_at": "2025-06-03T20:42:05.736054",
+    "completed_at": "2025-06-03T20:45:57.127532",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 5
+    }
+  },
+  "qa_1748955762": {
+    "id": "qa_1748955762",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T21:02:42.634956",
+    "updated_at": "2025-06-03T21:07:34.980468",
+    "started_at": "2025-06-03T21:02:42.639375",
+    "completed_at": "2025-06-03T21:07:34.980465",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 7,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 7
+    }
+  },
+  "qa_1748956435": {
+    "id": "qa_1748956435",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-03T21:13:55.397203",
+    "updated_at": "2025-06-04T12:44:46.944943",
+    "started_at": "2025-06-03T21:13:55.398606",
+    "completed_at": "2025-06-04T12:44:46.944941",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 8,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 8
+    }
+  },
+  "qa_1749014982": {
+    "id": "qa_1749014982",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T13:29:42.825745",
+    "updated_at": "2025-06-04T13:45:48.059937",
+    "started_at": "2025-06-04T13:29:42.833161",
+    "completed_at": "2025-06-04T13:45:48.059934",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 36,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 36
+    }
+  },
+  "qa_1749017230": {
+    "id": "qa_1749017230",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T14:07:10.151119",
+    "updated_at": "2025-06-04T14:15:32.046028",
+    "started_at": "2025-06-04T14:07:10.155394",
+    "completed_at": "2025-06-04T14:15:32.046024",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 83,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 83
+    }
+  },
+  "qa_1749018295": {
+    "id": "qa_1749018295",
+    "type": "qa",
+    "repository_name": "1234",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T14:24:55.134430",
+    "updated_at": "2025-06-04T14:25:38.148306",
+    "started_at": "2025-06-04T14:24:55.139107",
+    "completed_at": "2025-06-04T14:25:38.148303",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 10,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 10
+    }
+  },
+  "token_1749021225": {
+    "id": "token_1749021225",
+    "type": "token",
+    "repository_name": "test",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T15:13:45.666873",
+    "updated_at": "2025-06-04T15:13:59.685710",
+    "started_at": "2025-06-04T15:13:45.674875",
+    "completed_at": "2025-06-04T15:13:59.685709",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 14140,
+        "token_count_deepseek": 12804,
+        "token_count_jina": 13759
+      }
+    },
+    "metadata": {
+      "processed_files": 1
+    }
+  },
+  "qa_1749021242": {
+    "id": "qa_1749021242",
+    "type": "qa",
+    "repository_name": "test",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T15:14:02.908905",
+    "updated_at": "2025-06-04T15:22:24.766499",
+    "started_at": "2025-06-04T15:14:02.911698",
+    "completed_at": "2025-06-04T15:22:24.766489",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 131,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 131
+    }
+  },
+  "summary_1749022045": {
+    "id": "summary_1749022045",
+    "type": "summary",
+    "repository_name": "test",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T15:27:25.434846",
+    "updated_at": "2025-06-04T15:28:11.234508",
+    "started_at": "2025-06-04T15:27:25.437745",
+    "completed_at": "2025-06-04T15:28:11.234506",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0
+    }
+  },
+  "token_1749022060": {
+    "id": "token_1749022060",
+    "type": "token",
+    "repository_name": "test2",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T15:27:40.174009",
+    "updated_at": "2025-06-04T15:27:40.280552",
+    "started_at": "2025-06-04T15:27:40.177121",
+    "completed_at": "2025-06-04T15:27:40.280550",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 5732,
+        "token_count_deepseek": 5657,
+        "token_count_jina": 6363
+      }
+    },
+    "metadata": {
+      "processed_files": 1
+    }
+  },
+  "qa_1749022063": {
+    "id": "qa_1749022063",
+    "type": "qa",
+    "repository_name": "test2",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T15:27:43.612594",
+    "updated_at": "2025-06-04T15:30:45.118132",
+    "started_at": "2025-06-04T15:27:43.615601",
+    "completed_at": "2025-06-04T15:30:45.118130",
+    "error": null,
+    "result": {
+      "total_files": 1,
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 54,
+      "use_summary_files": false
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 0,
+      "new_files": 1,
+      "updated_files": 0,
+      "total_qa_pairs": 54
+    }
   }
 }

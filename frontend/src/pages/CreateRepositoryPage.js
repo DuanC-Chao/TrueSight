@@ -13,7 +13,6 @@ import { useNavigate } from 'react-router-dom';
 import { createRepository } from '../services/api';
 
 const { Title, Paragraph, Text } = Typography;
-const { TabPane } = Tabs;
 const { TextArea } = Input;
 
 /**
@@ -111,38 +110,39 @@ const CreateRepositoryPage = () => {
       }
 
       console.log('准备上传的文件列表:', fileList);
-      console.log('文件详情:', fileList.map(f => ({ name: f.name, size: f.size, type: f.type })));
-
-      // 构建FormData
+      
+      // 使用增强的跨平台兼容FormData
       const formData = new FormData();
       formData.append('name', values.name);
       formData.append('description', values.description || '');
       formData.append('source', 'upload');
       
-      // 添加文件 - 确保使用正确的字段名和文件对象
+      // 添加文件
       fileList.forEach((file, index) => {
-        console.log(`添加文件 ${index}:`, file.name, file.originFileObj || file);
+        // 获取实际文件对象
+        let actualFile = file;
         if (file.originFileObj) {
-          formData.append('files', file.originFileObj);
-        } else {
-          // 如果没有originFileObj，直接使用file对象
-          formData.append('files', file);
+          actualFile = file.originFileObj;
         }
+        formData.append('files', actualFile);
       });
 
-      // 调试：打印FormData内容
-      console.log('FormData内容:');
-      for (let [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          console.log(key, `File: ${value.name} (${value.size} bytes)`);
-        } else {
-          console.log(key, value);
-        }
+      // 验证FormData内容
+      const files = formData.getAll('files');
+      console.log('FormData诊断结果:', {
+        fileEntries: files.length,
+        fileNames: files.map(f => f.name)
+      });
+      
+      if (files.length === 0) {
+        message.error('FormData中没有有效的文件，请重试');
+        setLoading(false);
+        return;
       }
 
       const response = await createRepository(formData, true);
       if (response.success) {
-        message.success(`信息库创建成功，已上传 ${fileList.length} 个文件`);
+        message.success(`信息库创建成功，已上传 ${files.length} 个文件`);
         
         // 确保获取到正确的信息库名称
         const repositoryName = response.repository_name || values.name;
@@ -158,11 +158,18 @@ const CreateRepositoryPage = () => {
     } catch (error) {
       console.error('创建信息库失败:', error);
       message.error(`创建信息库失败: ${error.error || '未知错误'}`);
+      
+      // 额外的错误诊断信息
+      console.error('错误时的诊断信息:', {
+        fileList: fileList.map(f => ({ name: f.name, size: f.size, type: f.type })),
+        userAgent: navigator.userAgent,
+        platform: navigator.platform
+      });
     }
     setLoading(false);
   };
 
-  // 文件上传配置
+  // 增强的文件上传配置
   const uploadProps = {
     onRemove: file => {
       const index = fileList.indexOf(file);
@@ -171,34 +178,56 @@ const CreateRepositoryPage = () => {
       setFileList(newFileList);
     },
     beforeUpload: file => {
-      console.log('beforeUpload 被调用，文件:', file.name, '当前文件列表长度:', fileList.length);
+      console.log('beforeUpload 被调用，文件:', file.name, '大小:', file.size, '类型:', file.type);
+      console.log('文件对象详情:', file);
       
-      // 检查文件类型
-      const isValidType = file.type === 'text/plain' || 
-                          file.type === 'application/pdf' || 
-                          file.type === 'text/html' ||
-                          file.name.endsWith('.txt') ||
-                          file.name.endsWith('.pdf') ||
-                          file.name.endsWith('.html');
+      // 更严格的文件类型检查，考虑Windows/macOS差异
+      const fileName = file.name.toLowerCase();
+      const fileType = file.type || '';
+      
+      // 多重验证文件类型
+      const isValidType = (
+        // 通过扩展名验证
+        fileName.endsWith('.txt') || 
+        fileName.endsWith('.pdf') || 
+        fileName.endsWith('.html') ||
+        // 通过MIME类型验证
+        fileType === 'text/plain' ||
+        fileType === 'application/pdf' ||
+        fileType === 'text/html' ||
+        // Windows可能的MIME类型变体
+        fileType === 'application/x-pdf' ||
+        fileType === 'text/htm'
+      );
       
       if (!isValidType) {
         message.error(`文件 ${file.name} 格式不支持，只支持 .txt, .pdf, .html 格式`);
         return Upload.LIST_IGNORE;
       }
       
-      // 检查文件大小（限制为10MB）
-      const isLt10M = file.size / 1024 / 1024 < 10;
-      if (!isLt10M) {
-        message.error(`文件 ${file.name} 大小超过10MB限制`);
+      // 文件大小检查（考虑不同系统的精度差异）
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 10) {
+        message.error(`文件 ${file.name} 大小超过10MB限制 (当前: ${fileSizeMB.toFixed(2)}MB)`);
         return Upload.LIST_IGNORE;
       }
       
-      // 检查文件是否已存在
-      const fileExists = fileList.some(existingFile => 
-        existingFile.name === file.name && existingFile.size === file.size
-      );
+      // 检查文件是否已存在（增强比较逻辑）
+      const fileExists = fileList.some(existingFile => {
+        const existingName = existingFile.name || existingFile.originFileObj?.name || '';
+        const existingSize = existingFile.size || existingFile.originFileObj?.size || 0;
+        return existingName === file.name && Math.abs(existingSize - file.size) < 100; // 允许小的尺寸差异
+      });
+      
       if (fileExists) {
         message.warning(`文件 ${file.name} 已存在，跳过重复文件`);
+        return Upload.LIST_IGNORE;
+      }
+      
+      // 验证文件对象的有效性
+      if (!(file instanceof File) && !(file instanceof Blob)) {
+        console.error('无效的文件对象:', file);
+        message.error(`文件 ${file.name} 对象无效`);
         return Upload.LIST_IGNORE;
       }
       
@@ -214,15 +243,22 @@ const CreateRepositoryPage = () => {
     },
     fileList,
     multiple: true,
-    accept: '.txt,.pdf,.html',
+    // 修复Windows文件选择器问题：简化accept属性，只使用扩展名
+    accept: '.txt,.pdf,.html,.htm',
     showUploadList: {
       showRemoveIcon: true,
       showPreviewIcon: false,
       showDownloadIcon: false
     },
-    // 添加onChange处理，用于调试
+    // 增强的onChange处理
     onChange: (info) => {
       console.log('Upload onChange:', info.fileList.length, '个文件');
+      console.log('文件状态变化:', info.file.status);
+      
+      // 处理文件状态变化，确保跨平台一致性
+      if (info.file.status === 'error') {
+        message.error(`文件 ${info.file.name} 处理失败`);
+      }
     }
   };
 
@@ -237,150 +273,152 @@ const CreateRepositoryPage = () => {
         defaultActiveKey="crawler" 
         onChange={setCreateType}
         tabBarStyle={{ marginBottom: 24 }}
-      >
-        <TabPane 
-          tab={
-            <span>
-              <LinkOutlined />
-              爬虫方式
-            </span>
-          } 
-          key="crawler"
-        >
-          <Card className="flat-card">
-            <Spin spinning={loading && createType === 'crawler'}>
-              <Form
-                form={form}
-                layout="vertical"
-                onFinish={handleSubmit}
-                initialValues={{
-                  depth: 1,
-                  threads: 5
-                }}
-              >
-                <Form.Item
-                  name="name"
-                  label="信息库名称"
-                  rules={[{ required: true, message: '请输入信息库名称' }]}
-                >
-                  <Input placeholder="例如: Harvard_University" />
-                </Form.Item>
-
-                <Form.Item
-                  name="description"
-                  label="描述"
-                >
-                  <Input placeholder="可选描述" />
-                </Form.Item>
-
-                <Form.Item
-                  name="urls"
-                  label="起始URL列表"
-                  rules={[{ required: true, message: '请输入至少一个URL' }]}
-                  extra="每行一个URL，例如: https://www.harvard.edu"
-                >
-                  <TextArea
-                    placeholder="https://www.example.com"
-                    autoSize={{ minRows: 3, maxRows: 10 }}
-                  />
-                </Form.Item>
-
-                <Form.Item
-                  name="depth"
-                  label="爬取深度"
-                  extra="从起始URL开始的链接跟踪深度，0表示只爬取入口URL"
-                >
-                  <InputNumber min={0} max={10} />
-                </Form.Item>
-
-                <Form.Item
-                  name="threads"
-                  label="并发线程数"
-                  extra="同时爬取的线程数，建议5-10"
-                >
-                  <InputNumber min={1} max={20} />
-                </Form.Item>
-
-                <Form.Item>
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
-                    loading={loading && createType === 'crawler'}
-                    icon={<DatabaseOutlined />}
+        items={[
+          {
+            key: 'crawler',
+            label: (
+              <span>
+                <LinkOutlined />
+                爬虫方式
+              </span>
+            ),
+            children: (
+              <Card className="flat-card">
+                <Spin spinning={loading && createType === 'crawler'}>
+                  <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={handleSubmit}
+                    initialValues={{
+                      depth: 1,
+                      threads: 5
+                    }}
                   >
-                    创建并开始爬取
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Spin>
-          </Card>
-        </TabPane>
+                    <Form.Item
+                      name="name"
+                      label="信息库名称"
+                      rules={[{ required: true, message: '请输入信息库名称' }]}
+                    >
+                      <Input placeholder="例如: Harvard_University" />
+                    </Form.Item>
 
-        <TabPane 
-          tab={
-            <span>
-              <UploadOutlined />
-              上传方式
-            </span>
-          } 
-          key="upload"
-        >
-          <Card className="flat-card">
-            <Spin spinning={loading && createType === 'upload'}>
-              <Form
-                form={uploadForm}
-                layout="vertical"
-                onFinish={handleUploadSubmit}
-              >
-                <Form.Item
-                  name="name"
-                  label="信息库名称"
-                  rules={[{ required: true, message: '请输入信息库名称' }]}
-                >
-                  <Input placeholder="例如: Custom_Documents" />
-                </Form.Item>
+                    <Form.Item
+                      name="description"
+                      label="描述"
+                    >
+                      <Input placeholder="可选描述" />
+                    </Form.Item>
 
-                <Form.Item
-                  name="description"
-                  label="描述"
-                >
-                  <Input placeholder="可选描述" />
-                </Form.Item>
+                    <Form.Item
+                      name="urls"
+                      label="起始URL列表"
+                      rules={[{ required: true, message: '请输入至少一个URL' }]}
+                      extra="每行一个URL，例如: https://www.harvard.edu"
+                    >
+                      <TextArea
+                        placeholder="https://www.example.com"
+                        autoSize={{ minRows: 3, maxRows: 10 }}
+                      />
+                    </Form.Item>
 
-                <Form.Item
-                  label="上传文件"
-                  extra={`支持 .txt, .pdf, .html 格式，可选择多个文件。已选择 ${fileList.length} 个文件`}
-                >
-                  <Upload {...uploadProps}>
-                    <Button icon={<UploadOutlined />}>
-                      {fileList.length > 0 ? `已选择 ${fileList.length} 个文件，继续选择` : '选择文件'}
-                    </Button>
-                  </Upload>
-                  {fileList.length > 0 && (
-                    <div style={{ marginTop: 8, color: '#666' }}>
-                      <Text type="secondary">
-                        文件列表：{fileList.map(f => f.name).join(', ')}
-                      </Text>
-                    </div>
-                  )}
-                </Form.Item>
+                    <Form.Item
+                      name="depth"
+                      label="爬取深度"
+                      extra="从起始URL开始的链接跟踪深度，0表示只爬取入口URL"
+                    >
+                      <InputNumber min={0} max={10} />
+                    </Form.Item>
 
-                <Form.Item>
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
-                    loading={loading && createType === 'upload'}
-                    icon={<CloudUploadOutlined />}
-                    disabled={fileList.length === 0}
+                    <Form.Item
+                      name="threads"
+                      label="并发线程数"
+                      extra="同时爬取的线程数，建议5-10"
+                    >
+                      <InputNumber min={1} max={20} />
+                    </Form.Item>
+
+                    <Form.Item>
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        loading={loading && createType === 'crawler'}
+                        icon={<DatabaseOutlined />}
+                      >
+                        创建并开始爬取
+                      </Button>
+                    </Form.Item>
+                  </Form>
+                </Spin>
+              </Card>
+            )
+          },
+          {
+            key: 'upload',
+            label: (
+              <span>
+                <UploadOutlined />
+                上传方式
+              </span>
+            ),
+            children: (
+              <Card className="flat-card">
+                <Spin spinning={loading && createType === 'upload'}>
+                  <Form
+                    form={uploadForm}
+                    layout="vertical"
+                    onFinish={handleUploadSubmit}
                   >
-                    创建信息库
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Spin>
-          </Card>
-        </TabPane>
-      </Tabs>
+                    <Form.Item
+                      name="name"
+                      label="信息库名称"
+                      rules={[{ required: true, message: '请输入信息库名称' }]}
+                    >
+                      <Input placeholder="例如: Custom_Documents" />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="description"
+                      label="描述"
+                    >
+                      <Input placeholder="可选描述" />
+                    </Form.Item>
+
+                    <Form.Item
+                      label="上传文件"
+                      extra={`支持 .txt, .pdf, .html 格式，可选择多个文件。已选择 ${fileList.length} 个文件`}
+                    >
+                      <Upload {...uploadProps}>
+                        <Button icon={<UploadOutlined />}>
+                          {fileList.length > 0 ? `已选择 ${fileList.length} 个文件，继续选择` : '选择文件'}
+                        </Button>
+                      </Upload>
+                      {fileList.length > 0 && (
+                        <div style={{ marginTop: 8, color: '#666' }}>
+                          <Text type="secondary">
+                            文件列表：{fileList.map(f => f.name).join(', ')}
+                          </Text>
+                        </div>
+                      )}
+                    </Form.Item>
+
+                    <Form.Item>
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        loading={loading && createType === 'upload'}
+                        icon={<CloudUploadOutlined />}
+                        disabled={fileList.length === 0}
+                      >
+                        创建信息库
+                      </Button>
+                    </Form.Item>
+                  </Form>
+                </Spin>
+              </Card>
+            )
+          }
+        ]}
+      />
 
       <Alert
         message="提示"

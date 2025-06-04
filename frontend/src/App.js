@@ -7,7 +7,8 @@ import {
   SettingOutlined,
   BugOutlined,
   PlusOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
 
 // 导入页面组件
@@ -19,6 +20,7 @@ import CreateRepositoryPage from './pages/CreateRepositoryPage';
 import GlobalSettingsPage from './pages/GlobalSettingsPage';
 import BatchOperationPage from './pages/BatchOperationPage';
 import ErrorLogPage from './pages/ErrorLogPage';
+import FileUploadTest from './components/FileUploadTest';
 
 // 导入全局样式
 import './styles/global.css';
@@ -63,6 +65,11 @@ const App = () => {
       icon: <BugOutlined />,
       label: <Link to="/error-logs">错误日志</Link>,
     },
+    {
+      key: '/file-upload-test',
+      icon: <ExperimentOutlined />,
+      label: <Link to="/file-upload-test">文件上传测试</Link>,
+    },
   ];
 
   return (
@@ -90,6 +97,7 @@ const App = () => {
             <Route path="/batch" element={<BatchOperationPage />} />
             <Route path="/global-settings" element={<GlobalSettingsPage />} />
             <Route path="/error-logs" element={<ErrorLogPage />} />
+            <Route path="/file-upload-test" element={<FileUploadTest />} />
           </Routes>
         </div>
       </Content>

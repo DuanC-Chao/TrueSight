@@ -97,6 +97,28 @@ DEFAULT_FILE_TYPE_CHUNK_MAPPING = {
     }
 }
 
+# 默认的Prompt配置
+DEFAULT_PROMPT_CONFIG = {
+    'summary_prompt': "请对以下内容进行总结，突出关键信息：",
+    'summary_system_prompt': "你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。",
+    'qa_stages': {
+        'chunk': {
+            'chunk_size': 1000,
+            'chunk_overlap': 100,
+            'prompt': "请根据以下内容生成5-10个高质量的问答对。\n要求：\n1. 问题应该清晰、具体、有价值\n2. 答案应该准确、完整、基于给定内容\n3. 避免过于简单或重复的问题\n4. 输出格式为JSON数组，每个元素包含\"q\"（问题）和\"a\"（答案）字段\n\n内容：",
+            'system_prompt': "你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。"
+        },
+        'reduce': {
+            'prompt': "请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。\n要求：\n1. 去除重复或高度相似的问题\n2. 保留信息量大、有深度的问答对\n3. 确保问题和答案的准确性\n4. 输出格式与输入相同的JSON数组\n\n问答对列表：",
+            'system_prompt': "你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。"
+        },
+        'evaluate': {
+            'prompt': "请对以下问答对进行质量评估。\n要求：\n1. 为每个问答对添加\"self_eval\"字段，评分范围1-5分\n2. 5分：问题清晰具体，答案准确完整，信息价值高\n3. 4分：问题较好，答案基本准确，有一定价值\n4. 3分：问题和答案一般，基本可用\n5. 2分：问题或答案有明显问题，价值较低\n6. 1分：问题不清楚或答案错误，应该删除\n7. 输出格式为JSON数组，保留原有的q和a字段，添加self_eval字段\n\n问答对列表：",
+            'system_prompt': "你是一个专业的内容评估助手，擅长评估问答对的质量和价值。"
+        }
+    }
+}
+
 def init(app_config):
     """
     初始化信息库管理器
@@ -864,3 +886,143 @@ def batch_set_direct_import(repository_names, direct_import):
             }
 
     return results
+
+def get_repository_prompt_config(name):
+    """
+    获取信息库的Prompt配置
+
+    Args:
+        name: 信息库名称
+
+    Returns:
+        prompt_config: Prompt配置
+    """
+    if name not in repositories:
+        raise ValueError(f"信息库不存在: {name}")
+
+    repository = repositories[name]
+    
+    # 如果信息库没有自定义Prompt配置，返回默认配置
+    if 'prompt_config' not in repository:
+        return copy.deepcopy(DEFAULT_PROMPT_CONFIG)
+    
+    return repository['prompt_config']
+
+def update_repository_prompt_config(name, prompt_config):
+    """
+    更新信息库的Prompt配置
+
+    Args:
+        name: 信息库名称
+        prompt_config: Prompt配置
+
+    Returns:
+        repository: 更新后的信息库配置
+    """
+    if name not in repositories:
+        raise ValueError(f"信息库不存在: {name}")
+
+    # 获取信息库配置
+    repository = repositories[name]
+
+    # 更新Prompt配置
+    repository['prompt_config'] = prompt_config
+
+    # 更新时间
+    repository['updated_at'] = datetime.now().isoformat()
+
+    # 保存配置
+    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                 'data', 'crawled_data', name)
+    config_file = os.path.join(repository_dir, 'repository_config.json')
+    with open(config_file, 'w', encoding='utf-8') as f:
+        json.dump(repository, f, ensure_ascii=False, indent=2)
+
+    logging.info(f"更新信息库Prompt配置: {name}")
+
+    return repository
+
+def reset_repository_prompt_config(name):
+    """
+    重置信息库的Prompt配置为默认值
+
+    Args:
+        name: 信息库名称
+
+    Returns:
+        repository: 更新后的信息库配置
+    """
+    if name not in repositories:
+        raise ValueError(f"信息库不存在: {name}")
+
+    # 获取信息库配置
+    repository = repositories[name]
+
+    # 重置为默认配置
+    repository['prompt_config'] = copy.deepcopy(DEFAULT_PROMPT_CONFIG)
+
+    # 更新时间
+    repository['updated_at'] = datetime.now().isoformat()
+
+    # 保存配置
+    repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                 'data', 'crawled_data', name)
+    config_file = os.path.join(repository_dir, 'repository_config.json')
+    with open(config_file, 'w', encoding='utf-8') as f:
+        json.dump(repository, f, ensure_ascii=False, indent=2)
+
+    logging.info(f"重置信息库Prompt配置: {name}")
+
+    return repository
+
+def get_merged_prompt_config(name, global_config=None):
+    """
+    获取合并后的Prompt配置（信息库配置覆盖全局配置）
+
+    Args:
+        name: 信息库名称
+        global_config: 全局配置（可选）
+
+    Returns:
+        merged_config: 合并后的配置
+    """
+    if name not in repositories:
+        raise ValueError(f"信息库不存在: {name}")
+
+    # 获取全局配置
+    if global_config is None:
+        # 从配置管理器获取全局配置
+        try:
+            from ..config import config_manager
+            global_config = config_manager.get_config()
+        except:
+            global_config = {}
+
+    # 获取全局Prompt配置
+    global_prompt_config = global_config.get('processor', {})
+    
+    # 构建全局Prompt配置结构
+    global_prompts = {
+        'summary_prompt': global_prompt_config.get('summary_prompt', DEFAULT_PROMPT_CONFIG['summary_prompt']),
+        'summary_system_prompt': global_prompt_config.get('summary_system_prompt', DEFAULT_PROMPT_CONFIG['summary_system_prompt']),
+        'qa_stages': global_prompt_config.get('qa_stages', DEFAULT_PROMPT_CONFIG['qa_stages'])
+    }
+
+    # 获取信息库Prompt配置
+    repository = repositories[name]
+    repo_prompt_config = repository.get('prompt_config', {})
+
+    # 合并配置（信息库配置覆盖全局配置）
+    merged_config = copy.deepcopy(global_prompts)
+    
+    # 递归合并配置
+    def merge_dict(base, override):
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                merge_dict(base[key], value)
+            else:
+                base[key] = value
+    
+    merge_dict(merged_config, repo_prompt_config)
+    
+    return merged_config

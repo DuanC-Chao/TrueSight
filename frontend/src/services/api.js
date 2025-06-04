@@ -1,8 +1,11 @@
 import axios from 'axios';
 
+// 定义API基础URL
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001';
+
 // 创建axios实例
 const api = axios.create({
-  baseURL: `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001'}/api`,
+  baseURL: `${API_BASE_URL}/api`,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -236,6 +239,23 @@ export const getErrorLogs = (params = {}) => {
 
 export const clearErrorLog = (logId) => {
   return api.delete(`/error_logs/${logId}`);
+};
+
+// 信息库Prompt配置相关API
+export const getRepositoryPromptConfig = async (repositoryName) => {
+  return api.get(`/repository/${repositoryName}/prompt_config`);
+};
+
+export const updateRepositoryPromptConfig = async (repositoryName, promptConfig) => {
+  return api.put(`/repository/${repositoryName}/prompt_config`, { prompt_config: promptConfig });
+};
+
+export const resetRepositoryPromptConfig = async (repositoryName) => {
+  return api.post(`/repository/${repositoryName}/prompt_config/reset`);
+};
+
+export const syncRepositoryPromptConfigFromGlobal = async (repositoryName) => {
+  return api.post(`/repository/${repositoryName}/prompt_config/sync_from_global`);
 };
 
 export default api;

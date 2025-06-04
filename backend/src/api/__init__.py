@@ -572,8 +572,9 @@ def create_repository():
             description = request.form.get('description', '')
             source = request.form.get('source', 'upload')
             
-            # 添加调试日志
+            # 增强的调试日志
             logging.info(f"接收到文件上传请求: name={name}, source={source}")
+            logging.info(f"request.content_type: {request.content_type}")
             logging.info(f"request.form: {dict(request.form)}")
             logging.info(f"request.files keys: {list(request.files.keys())}")
             
@@ -586,22 +587,41 @@ def create_repository():
             if existing_repository:
                 return jsonify({'success': False, 'error': f"信息库已存在: {name}"}), 400
             
-            # 获取上传的文件
-            uploaded_files = request.files.getlist('files')
-            logging.info(f"获取到的文件数量: {len(uploaded_files)}")
-            for i, file in enumerate(uploaded_files):
-                logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', 'unknown')}")
+            # 增强的文件获取逻辑，更好地处理跨平台差异
+            uploaded_files = []
             
+            # 尝试多种可能的字段名，处理不同前端框架和浏览器的差异
+            possible_field_names = ['files', 'files[]', 'file', 'upload', 'document']
+            for field_name in possible_field_names:
+                files = request.files.getlist(field_name)
+                if files and any(f.filename for f in files):  # 确保文件有有效的文件名
+                    uploaded_files.extend(files)
+                    logging.info(f"从字段 '{field_name}' 获取到 {len(files)} 个文件")
+            
+            # 如果还是没有文件，遍历所有文件字段
             if not uploaded_files:
-                # 如果没有获取到文件，尝试其他可能的字段名
                 for key in request.files.keys():
                     files = request.files.getlist(key)
-                    if files:
-                        uploaded_files.extend(files)
-                        logging.info(f"从字段 '{key}' 获取到 {len(files)} 个文件")
+                    valid_files = [f for f in files if f.filename and f.filename.strip()]
+                    if valid_files:
+                        uploaded_files.extend(valid_files)
+                        logging.info(f"从字段 '{key}' 获取到 {len(valid_files)} 个有效文件")
+            
+            logging.info(f"总共获取到的文件数量: {len(uploaded_files)}")
+            for i, file in enumerate(uploaded_files):
+                file_size = 0
+                try:
+                    # 尝试获取文件大小
+                    file.seek(0, 2)  # 移动到文件末尾
+                    file_size = file.tell()
+                    file.seek(0)  # 重置到文件开头
+                except:
+                    file_size = 0
                 
-                if not uploaded_files:
-                    return jsonify({'success': False, 'error': '没有上传文件'}), 400
+                logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', getattr(file, 'mimetype', 'unknown'))}, size={file_size}")
+            
+            if not uploaded_files:
+                return jsonify({'success': False, 'error': '没有上传文件或文件无效'}), 400
             
             # 创建信息库
             repository = repository_manager.create_repository(
@@ -610,88 +630,139 @@ def create_repository():
                 config_override={'description': description}
             )
             
-            # 保存上传的文件
+            # 确保目录存在
             repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                                          'data', 'crawled_data', name)
+            os.makedirs(repository_dir, exist_ok=True)
             
             saved_files = []
-            for file in uploaded_files:
-                if file.filename:
-                    # 改进的文件名处理，更好地保留中文文件名
-                    original_name = file.filename
-                    name_part = os.path.splitext(original_name)[0]
-                    ext_part = os.path.splitext(original_name)[1]
-                    
-                    # 检查文件类型
-                    allowed_extensions = {'.txt', '.pdf', '.html'}
-                    file_ext = ext_part.lower()
-                    
-                    if file_ext not in allowed_extensions:
-                        logging.warning(f"跳过不支持的文件类型: {file.filename}")
-                        continue
-                    
-                    # 自定义文件名清理函数，保留中文字符
-                    def clean_filename(filename):
-                        """清理文件名，保留中文字符，只移除危险字符"""
-                        import re
-                        # 移除或替换危险字符，但保留中文、英文、数字、常见符号
-                        # 移除的字符：/ \ : * ? " < > |
-                        dangerous_chars = r'[/\\:*?"<>|]'
-                        cleaned = re.sub(dangerous_chars, '_', filename)
-                        # 移除开头和结尾的空格和点
-                        cleaned = cleaned.strip(' .')
-                        return cleaned
-                    
-                    # 使用自定义清理函数
-                    safe_name_part = clean_filename(name_part)
-                    
-                    # 如果清理后的名称为空或太短，使用原始名称的安全版本
-                    if not safe_name_part or len(safe_name_part.strip()) < 1:
-                        # 尝试使用secure_filename作为备选
-                        fallback_name = secure_filename(name_part)
-                        if fallback_name and len(fallback_name) >= 2:
-                            safe_name_part = fallback_name
-                        else:
-                            # 最后的备选方案：使用时间戳
-                            safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
-                    
-                    # 确保扩展名存在且正确
-                    if not ext_part:
+            for i, file in enumerate(uploaded_files):
+                if file.filename and file.filename.strip():
+                    try:
+                        # 增强的文件名处理，更好地支持跨平台
+                        original_name = file.filename.strip()
+                        
+                        # 处理Windows路径分隔符
+                        original_name = original_name.replace('\\', '/').split('/')[-1]
+                        
+                        name_part = os.path.splitext(original_name)[0]
+                        ext_part = os.path.splitext(original_name)[1]
+                        
+                        # 检查文件类型
+                        allowed_extensions = {'.txt', '.pdf', '.html', '.htm'}
+                        file_ext = ext_part.lower()
+                        
                         # 如果没有扩展名，尝试从MIME类型推断
-                        if hasattr(file, 'content_type'):
-                            if file.content_type == 'text/plain':
-                                ext_part = '.txt'
-                            elif file.content_type == 'application/pdf':
-                                ext_part = '.pdf'
-                            elif file.content_type == 'text/html':
-                                ext_part = '.html'
+                        if not file_ext:
+                            content_type = getattr(file, 'content_type', getattr(file, 'mimetype', ''))
+                            if 'text/plain' in content_type:
+                                file_ext = '.txt'
+                            elif 'application/pdf' in content_type:
+                                file_ext = '.pdf'
+                            elif 'text/html' in content_type:
+                                file_ext = '.html'
                             else:
-                                ext_part = '.txt'  # 默认为txt
-                        else:
-                            ext_part = '.txt'  # 默认为txt
-                    
-                    # 重新组合文件名
-                    filename = safe_name_part + ext_part.lower()
-                    file_path = os.path.join(repository_dir, filename)
-                    
-                    # 检查文件是否已存在，如果存在则添加时间戳
-                    if os.path.exists(file_path):
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        filename = f"{safe_name_part}_{timestamp}{ext_part.lower()}"
+                                file_ext = '.txt'  # 默认
+                        
+                        if file_ext not in allowed_extensions:
+                            logging.warning(f"跳过不支持的文件类型: {file.filename} (扩展名: {file_ext})")
+                            continue
+                        
+                        # 增强的文件名清理函数，更好地处理Unicode和特殊字符
+                        def enhanced_clean_filename(filename):
+                            """增强的文件名清理，支持跨平台兼容性"""
+                            import re
+                            import unicodedata
+                            
+                            # 标准化Unicode字符
+                            try:
+                                filename = unicodedata.normalize('NFKD', filename)
+                            except:
+                                pass
+                            
+                            # 移除或替换危险字符，Windows和Unix系统都考虑
+                            dangerous_chars = r'[<>:"/\\|?*\x00-\x1f]'
+                            cleaned = re.sub(dangerous_chars, '_', filename)
+                            
+                            # 移除开头和结尾的空格和点
+                            cleaned = cleaned.strip(' .')
+                            
+                            # 确保不为空
+                            if not cleaned:
+                                cleaned = f"file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                            
+                            # Windows文件名长度限制
+                            if len(cleaned) > 200:
+                                cleaned = cleaned[:200]
+                            
+                            return cleaned
+                        
+                        # 使用增强的清理函数
+                        safe_name_part = enhanced_clean_filename(name_part)
+                        
+                        # 最终文件名处理
+                        if not safe_name_part or len(safe_name_part.strip()) < 1:
+                            # 备选方案：使用secure_filename
+                            try:
+                                fallback_name = secure_filename(name_part)
+                                if fallback_name and len(fallback_name) >= 1:
+                                    safe_name_part = fallback_name
+                                else:
+                                    raise ValueError("Empty filename")
+                            except:
+                                # 最后的备选方案：使用时间戳
+                                safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                        
+                        # 重新组合文件名
+                        filename = safe_name_part + file_ext.lower()
                         file_path = os.path.join(repository_dir, filename)
-                    
-                    file.save(file_path)
-                    file_size = os.path.getsize(file_path)
-                    saved_files.append({
-                        'filename': filename,
-                        'original_name': original_name,
-                        'path': file_path,
-                        'size': file_size
-                    })
-                    logging.info(f"保存上传文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+                        
+                        # 处理文件名冲突
+                        counter = 1
+                        while os.path.exists(file_path):
+                            filename = f"{safe_name_part}_{counter}{file_ext.lower()}"
+                            file_path = os.path.join(repository_dir, filename)
+                            counter += 1
+                            if counter > 1000:  # 防止无限循环
+                                filename = f"{safe_name_part}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}{file_ext.lower()}"
+                                file_path = os.path.join(repository_dir, filename)
+                                break
+                        
+                        # 保存文件，增加错误处理
+                        try:
+                            file.save(file_path)
+                            file_size = os.path.getsize(file_path)
+                            
+                            # 验证文件确实保存成功
+                            if file_size == 0:
+                                os.remove(file_path)
+                                logging.warning(f"文件 {original_name} 保存后大小为0，已删除")
+                                continue
+                            
+                            saved_files.append({
+                                'filename': filename,
+                                'original_name': original_name,
+                                'path': file_path,
+                                'size': file_size
+                            })
+                            logging.info(f"成功保存文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+                            
+                        except Exception as save_error:
+                            logging.error(f"保存文件 {original_name} 失败: {str(save_error)}")
+                            # 清理可能的部分文件
+                            if os.path.exists(file_path):
+                                try:
+                                    os.remove(file_path)
+                                except:
+                                    pass
+                            continue
+                            
+                    except Exception as process_error:
+                        logging.error(f"处理文件 {file.filename} 失败: {str(process_error)}")
+                        continue
             
             if not saved_files:
-                return jsonify({'success': False, 'error': '没有有效的文件被保存'}), 400
+                return jsonify({'success': False, 'error': '没有有效的文件被保存，请检查文件格式和大小'}), 400
             
             # 更新信息库状态
             repository_manager.update_repository(name, {
@@ -704,7 +775,8 @@ def create_repository():
                 'success': True,
                 'repository': repository_manager.get_repository(name),
                 'repository_name': name,
-                'uploaded_files': [f['filename'] for f in saved_files]
+                'uploaded_files': [f['filename'] for f in saved_files],
+                'message': f"成功上传 {len(saved_files)} 个文件"
             })
         
         else:
@@ -1043,7 +1115,7 @@ def update_repository_file_type_chunk_mapping(name):
 def upload_repository_files(name):
     """上传文件到信息库"""
     try:
-        # 添加调试日志
+        # 增强的调试日志
         logging.info(f"接收到文件上传请求: repository={name}")
         logging.info(f"request.content_type: {request.content_type}")
         logging.info(f"request.files keys: {list(request.files.keys())}")
@@ -1053,29 +1125,41 @@ def upload_repository_files(name):
         if not repository:
             return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
         
-        # 获取上传的文件 - 尝试多种可能的字段名
+        # 增强的文件获取逻辑 - 尝试多种可能的字段名
         uploaded_files = []
         
-        # 尝试不同的字段名
-        for field_name in ['files', 'files[]']:
+        # 尝试多种可能的字段名，处理不同前端框架和浏览器的差异
+        possible_field_names = ['files', 'files[]', 'file', 'upload', 'document']
+        for field_name in possible_field_names:
             files = request.files.getlist(field_name)
-            if files:
+            if files and any(f.filename for f in files):  # 确保文件有有效的文件名
                 uploaded_files.extend(files)
                 logging.info(f"从字段 '{field_name}' 获取到 {len(files)} 个文件")
         
-        # 如果还是没有文件，尝试获取所有文件
+        # 如果还是没有文件，遍历所有文件字段
         if not uploaded_files:
             for key in request.files.keys():
                 files = request.files.getlist(key)
-                uploaded_files.extend(files)
-                logging.info(f"从字段 '{key}' 获取到 {len(files)} 个文件")
+                valid_files = [f for f in files if f.filename and f.filename.strip()]
+                if valid_files:
+                    uploaded_files.extend(valid_files)
+                    logging.info(f"从字段 '{key}' 获取到 {len(valid_files)} 个有效文件")
         
         logging.info(f"总共获取到的文件数量: {len(uploaded_files)}")
         for i, file in enumerate(uploaded_files):
-            logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', 'unknown')}")
+            file_size = 0
+            try:
+                # 尝试获取文件大小
+                file.seek(0, 2)  # 移动到文件末尾
+                file_size = file.tell()
+                file.seek(0)  # 重置到文件开头
+            except:
+                file_size = 0
+            
+            logging.info(f"文件 {i}: filename={file.filename}, content_type={getattr(file, 'content_type', getattr(file, 'mimetype', 'unknown'))}, size={file_size}")
         
         if not uploaded_files:
-            return jsonify({'success': False, 'error': '没有上传文件'}), 400
+            return jsonify({'success': False, 'error': '没有上传文件或文件无效'}), 400
         
         # 获取信息库目录
         repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -1085,83 +1169,133 @@ def upload_repository_files(name):
         os.makedirs(repository_dir, exist_ok=True)
         
         saved_files = []
-        for file in uploaded_files:
-            if file.filename:
-                # 改进的文件名处理，更好地保留中文文件名
-                original_name = file.filename
-                name_part = os.path.splitext(original_name)[0]
-                ext_part = os.path.splitext(original_name)[1]
-                
-                # 检查文件类型
-                allowed_extensions = {'.txt', '.pdf', '.html'}
-                file_ext = ext_part.lower()
-                
-                if file_ext not in allowed_extensions:
-                    logging.warning(f"跳过不支持的文件类型: {file.filename}")
-                    continue
-                
-                # 自定义文件名清理函数，保留中文字符
-                def clean_filename(filename):
-                    """清理文件名，保留中文字符，只移除危险字符"""
-                    import re
-                    # 移除或替换危险字符，但保留中文、英文、数字、常见符号
-                    # 移除的字符：/ \ : * ? " < > |
-                    dangerous_chars = r'[/\\:*?"<>|]'
-                    cleaned = re.sub(dangerous_chars, '_', filename)
-                    # 移除开头和结尾的空格和点
-                    cleaned = cleaned.strip(' .')
-                    return cleaned
-                
-                # 使用自定义清理函数
-                safe_name_part = clean_filename(name_part)
-                
-                # 如果清理后的名称为空或太短，使用原始名称的安全版本
-                if not safe_name_part or len(safe_name_part.strip()) < 1:
-                    # 尝试使用secure_filename作为备选
-                    fallback_name = secure_filename(name_part)
-                    if fallback_name and len(fallback_name) >= 2:
-                        safe_name_part = fallback_name
-                    else:
-                        # 最后的备选方案：使用时间戳
-                        safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
-                
-                # 确保扩展名存在且正确
-                if not ext_part:
+        for i, file in enumerate(uploaded_files):
+            if file.filename and file.filename.strip():
+                try:
+                    # 增强的文件名处理，更好地支持跨平台
+                    original_name = file.filename.strip()
+                    
+                    # 处理Windows路径分隔符
+                    original_name = original_name.replace('\\', '/').split('/')[-1]
+                    
+                    name_part = os.path.splitext(original_name)[0]
+                    ext_part = os.path.splitext(original_name)[1]
+                    
+                    # 检查文件类型
+                    allowed_extensions = {'.txt', '.pdf', '.html', '.htm'}
+                    file_ext = ext_part.lower()
+                    
                     # 如果没有扩展名，尝试从MIME类型推断
-                    if hasattr(file, 'content_type'):
-                        if file.content_type == 'text/plain':
-                            ext_part = '.txt'
-                        elif file.content_type == 'application/pdf':
-                            ext_part = '.pdf'
-                        elif file.content_type == 'text/html':
-                            ext_part = '.html'
+                    if not file_ext:
+                        content_type = getattr(file, 'content_type', getattr(file, 'mimetype', ''))
+                        if 'text/plain' in content_type:
+                            file_ext = '.txt'
+                        elif 'application/pdf' in content_type:
+                            file_ext = '.pdf'
+                        elif 'text/html' in content_type:
+                            file_ext = '.html'
                         else:
-                            ext_part = '.txt'  # 默认为txt
-                    else:
-                        ext_part = '.txt'  # 默认为txt
-                
-                # 重新组合文件名
-                filename = safe_name_part + ext_part.lower()
-                file_path = os.path.join(repository_dir, filename)
-                
-                # 检查文件是否已存在，如果存在则添加时间戳
-                if os.path.exists(file_path):
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    filename = f"{safe_name_part}_{timestamp}{ext_part.lower()}"
+                            file_ext = '.txt'  # 默认
+                    
+                    if file_ext not in allowed_extensions:
+                        logging.warning(f"跳过不支持的文件类型: {file.filename} (扩展名: {file_ext})")
+                        continue
+                    
+                    # 增强的文件名清理函数，更好地处理Unicode和特殊字符
+                    def enhanced_clean_filename(filename):
+                        """增强的文件名清理，支持跨平台兼容性"""
+                        import re
+                        import unicodedata
+                        
+                        # 标准化Unicode字符
+                        try:
+                            filename = unicodedata.normalize('NFKD', filename)
+                        except:
+                            pass
+                        
+                        # 移除或替换危险字符，Windows和Unix系统都考虑
+                        dangerous_chars = r'[<>:"/\\|?*\x00-\x1f]'
+                        cleaned = re.sub(dangerous_chars, '_', filename)
+                        
+                        # 移除开头和结尾的空格和点
+                        cleaned = cleaned.strip(' .')
+                        
+                        # 确保不为空
+                        if not cleaned:
+                            cleaned = f"file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                        
+                        # Windows文件名长度限制
+                        if len(cleaned) > 200:
+                            cleaned = cleaned[:200]
+                        
+                        return cleaned
+                    
+                    # 使用增强的清理函数
+                    safe_name_part = enhanced_clean_filename(name_part)
+                    
+                    # 最终文件名处理
+                    if not safe_name_part or len(safe_name_part.strip()) < 1:
+                        # 备选方案：使用secure_filename
+                        try:
+                            fallback_name = secure_filename(name_part)
+                            if fallback_name and len(fallback_name) >= 1:
+                                safe_name_part = fallback_name
+                            else:
+                                raise ValueError("Empty filename")
+                        except:
+                            # 最后的备选方案：使用时间戳
+                            safe_name_part = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+                    
+                    # 重新组合文件名
+                    filename = safe_name_part + file_ext.lower()
                     file_path = os.path.join(repository_dir, filename)
-                
-                file.save(file_path)
-                file_size = os.path.getsize(file_path)
-                saved_files.append({
-                    'filename': filename,
-                    'original_name': original_name,
-                    'path': file_path,
-                    'size': file_size
-                })
-                logging.info(f"保存上传文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+                    
+                    # 处理文件名冲突
+                    counter = 1
+                    while os.path.exists(file_path):
+                        filename = f"{safe_name_part}_{counter}{file_ext.lower()}"
+                        file_path = os.path.join(repository_dir, filename)
+                        counter += 1
+                        if counter > 1000:  # 防止无限循环
+                            filename = f"{safe_name_part}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}{file_ext.lower()}"
+                            file_path = os.path.join(repository_dir, filename)
+                            break
+                    
+                    # 保存文件，增加错误处理
+                    try:
+                        file.save(file_path)
+                        file_size = os.path.getsize(file_path)
+                        
+                        # 验证文件确实保存成功
+                        if file_size == 0:
+                            os.remove(file_path)
+                            logging.warning(f"文件 {original_name} 保存后大小为0，已删除")
+                            continue
+                        
+                        saved_files.append({
+                            'filename': filename,
+                            'original_name': original_name,
+                            'path': file_path,
+                            'size': file_size
+                        })
+                        logging.info(f"成功保存文件: {original_name} -> {filename} (大小: {file_size} bytes)")
+                        
+                    except Exception as save_error:
+                        logging.error(f"保存文件 {original_name} 失败: {str(save_error)}")
+                        # 清理可能的部分文件
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except:
+                                pass
+                        continue
+                        
+                except Exception as process_error:
+                    logging.error(f"处理文件 {file.filename} 失败: {str(process_error)}")
+                    continue
         
         if not saved_files:
-            return jsonify({'success': False, 'error': '没有有效的文件被保存'}), 400
+            return jsonify({'success': False, 'error': '没有有效的文件被保存，请检查文件格式和大小'}), 400
         
         # 更新信息库状态
         repository_manager.update_repository(name, {
@@ -1448,4 +1582,113 @@ def update_config():
     except Exception as e:
         logging.error(f"更新全局配置失败: {str(e)}")
         error_logs.add_error_log('system', str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/prompt_config', methods=['GET'])
+def get_repository_prompt_config(name):
+    """获取信息库Prompt配置"""
+    try:
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        # 获取Prompt配置
+        prompt_config = repository_manager.get_repository_prompt_config(name)
+        
+        return jsonify({
+            'success': True,
+            'prompt_config': prompt_config
+        })
+    
+    except Exception as e:
+        logging.error(f"获取信息库Prompt配置失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/prompt_config', methods=['PUT'])
+def update_repository_prompt_config(name):
+    """更新信息库Prompt配置"""
+    try:
+        data = request.json
+        prompt_config = data.get('prompt_config', {})
+        
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        # 更新Prompt配置
+        updated_repository = repository_manager.update_repository_prompt_config(name, prompt_config)
+        
+        return jsonify({
+            'success': True,
+            'repository': updated_repository,
+            'prompt_config': prompt_config
+        })
+    
+    except Exception as e:
+        logging.error(f"更新信息库Prompt配置失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/prompt_config/reset', methods=['POST'])
+def reset_repository_prompt_config(name):
+    """重置信息库Prompt配置为默认值"""
+    try:
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        # 重置Prompt配置
+        updated_repository = repository_manager.reset_repository_prompt_config(name)
+        
+        # 获取重置后的配置
+        prompt_config = repository_manager.get_repository_prompt_config(name)
+        
+        return jsonify({
+            'success': True,
+            'repository': updated_repository,
+            'prompt_config': prompt_config
+        })
+    
+    except Exception as e:
+        logging.error(f"重置信息库Prompt配置失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/prompt_config/sync_from_global', methods=['POST'])
+def sync_repository_prompt_config_from_global(name):
+    """从全局配置同步信息库Prompt配置"""
+    try:
+        # 检查信息库是否存在
+        repository = repository_manager.get_repository(name)
+        if not repository:
+            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        
+        # 获取全局配置
+        from ..utils.config_loader import get_config
+        global_config = get_config()
+        global_prompt_config = global_config.get('processor', {})
+        
+        # 构建要同步的配置
+        sync_config = {
+            'summary_prompt': global_prompt_config.get('summary_prompt', ''),
+            'summary_system_prompt': global_prompt_config.get('summary_system_prompt', ''),
+            'qa_stages': global_prompt_config.get('qa_stages', {})
+        }
+        
+        # 更新信息库配置
+        updated_repository = repository_manager.update_repository_prompt_config(name, sync_config)
+        
+        return jsonify({
+            'success': True,
+            'repository': updated_repository,
+            'prompt_config': sync_config
+        })
+    
+    except Exception as e:
+        logging.error(f"同步信息库Prompt配置失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
         return jsonify({'success': False, 'error': str(e)}), 500

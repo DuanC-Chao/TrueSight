@@ -39,7 +39,7 @@ def init(app_config):
     
     # 加载预处理配置
     processor_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                        'config', 'processor.yaml')
+                                        'config', 'config.yaml')
     
     if os.path.exists(processor_config_path):
         import yaml
@@ -363,6 +363,23 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
         new_files = 0
         updated_files = 0
         
+        # 获取提示词
+        # 如果提供了信息库名称，获取信息库级别的Prompt配置
+        if repository_name:
+            try:
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, config)
+                # 使用信息库级别的Prompt配置
+                summary_prompt = repo_prompt_config.get('summary_prompt', config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：'))
+                summary_system_prompt = repo_prompt_config.get('summary_system_prompt', config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。'))
+            except Exception as e:
+                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+                summary_prompt = config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+                summary_system_prompt = config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+        else:
+            # 使用全局配置
+            summary_prompt = config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+            summary_system_prompt = config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+        
         # 处理每个文件
         for file_path in files:
             try:
@@ -423,7 +440,7 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
                     logging.info(f"新文件，生成总结: {file_name}")
                 
                 # 生成总结
-                summary = _generate_summary(content, llm_config)
+                summary = _generate_summary(content, llm_config, repository_name)
                 
                 # 保存总结
                 summary_file = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}_summary.txt")
@@ -514,13 +531,14 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
         
         logging.error(f"内容总结任务 {task_id} 失败: {str(e)}")
 
-def _generate_summary(content, llm_config=None):
+def _generate_summary(content, llm_config=None, repository_name=None):
     """
     生成内容总结
     
     Args:
         content: 要总结的内容
         llm_config: LLM配置（可选）
+        repository_name: 信息库名称（可选）
         
     Returns:
         summary: 生成的总结
@@ -551,8 +569,21 @@ def _generate_summary(content, llm_config=None):
         api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
         
         # 获取提示词
-        summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
-        summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+        # 如果提供了信息库名称，获取信息库级别的Prompt配置
+        if repository_name:
+            try:
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+                # 使用信息库级别的Prompt配置
+                summary_prompt = repo_prompt_config.get('summary_prompt', merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：'))
+                summary_system_prompt = repo_prompt_config.get('summary_system_prompt', merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。'))
+            except Exception as e:
+                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+                summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+                summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+        else:
+            # 使用全局配置
+            summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+            summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
         
         # 准备请求数据
         headers = {
@@ -850,12 +881,31 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
         if llm_config:
             merged_config.update(llm_config)
         
-        # 从全局配置获取分块大小
-        qa_stages = merged_config.get('qa_stages', {})
-        chunk_config = qa_stages.get('chunk', {})
-        chunk_size = chunk_config.get('chunk_size', 1000)
-        
-        logging.info(f"使用分块大小: {chunk_size} tokens")
+        # 从信息库级别配置获取分块大小
+        if repository_name:
+            try:
+                from ..repository import repository_manager
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+                # 使用信息库级别的分块配置
+                qa_stages = repo_prompt_config.get('qa_stages', {})
+                chunk_config = qa_stages.get('chunk', {})
+                chunk_size = chunk_config.get('chunk_size', 1000)
+                logging.info(f"使用信息库级别的分块大小: {chunk_size} tokens")
+            except Exception as e:
+                logging.warning(f"获取信息库分块配置失败，使用全局配置: {str(e)}")
+                # 从全局配置获取分块大小 - 修复配置路径
+                processor_config = merged_config.get('processor', {})
+                qa_stages = processor_config.get('qa_stages', {})
+                chunk_config = qa_stages.get('chunk', {})
+                chunk_size = chunk_config.get('chunk_size', 1000)
+                logging.info(f"使用全局分块大小: {chunk_size} tokens")
+        else:
+            # 从全局配置获取分块大小 - 修复配置路径
+            processor_config = merged_config.get('processor', {})
+            qa_stages = processor_config.get('qa_stages', {})
+            chunk_config = qa_stages.get('chunk', {})
+            chunk_size = chunk_config.get('chunk_size', 1000)
+            logging.info(f"使用全局分块大小: {chunk_size} tokens")
         
         # 检查Token计算状态
         token_count_dir = os.path.join(repository_dir, 'token_count')
@@ -972,9 +1022,8 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 
                 # 基于Token数量进行分块
                 if file_tokens > 0 and file_tokens > chunk_size:
-                    # 计算需要分成几块
-                    num_chunks = (file_tokens + chunk_size - 1) // chunk_size  # 向上取整
-                    chunks = _chunk_content_by_tokens(content, num_chunks)
+                    # 使用设定的分块大小进行分块
+                    chunks = _chunk_content_by_tokens(content, chunk_size)
                     logging.info(f"文件 {file_name} 有 {file_tokens} tokens，分成 {len(chunks)} 块")
                 else:
                     # 文件较小，不分块
@@ -987,7 +1036,7 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 
                 for i, chunk in enumerate(chunks):
                     logging.info(f"  处理块 {i+1}/{len(chunks)} (第一阶段：生成问答对)")
-                    qa_pairs_chunk = _generate_qa_pairs_for_chunk(chunk, llm_config)
+                    qa_pairs_chunk = _generate_qa_pairs_for_chunk(chunk, llm_config, repository_name)
                     if qa_pairs_chunk:
                         all_qa_pairs_for_file.extend(qa_pairs_chunk)
                 
@@ -1004,9 +1053,10 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 
                 # 第二阶段：去重和筛选（Reduce）
                 current_qa_pairs = all_qa_pairs_for_file
-                if config.get('qa_stages', {}).get('reduce', {}).get('enabled', True):
+                processor_config = config.get('processor', {})
+                if processor_config.get('qa_stages', {}).get('reduce', {}).get('enabled', True):
                     logging.info(f"  第二阶段：去重和筛选问答对")
-                    reduced_qa_pairs = _reduce_qa_pairs_llm(current_qa_pairs, llm_config)
+                    reduced_qa_pairs = _reduce_qa_pairs_llm(current_qa_pairs, llm_config, repository_name)
                     if reduced_qa_pairs:
                         current_qa_pairs = reduced_qa_pairs
                         # 更新JSON文件
@@ -1017,9 +1067,9 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                         logging.warning(f"  第二阶段失败，保留原始问答对")
                 
                 # 第三阶段：质量评估（Self Evaluation）
-                if config.get('qa_stages', {}).get('evaluate', {}).get('enabled', True):
+                if processor_config.get('qa_stages', {}).get('evaluate', {}).get('enabled', True):
                     logging.info(f"  第三阶段：评估问答对质量")
-                    evaluated_qa_pairs = _evaluate_qa_pairs_llm(current_qa_pairs, llm_config)
+                    evaluated_qa_pairs = _evaluate_qa_pairs_llm(current_qa_pairs, llm_config, repository_name)
                     if evaluated_qa_pairs:
                         current_qa_pairs = evaluated_qa_pairs
                         # 更新JSON文件
@@ -1109,64 +1159,72 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
         
         logging.error(f"问答对生成任务 {task_id} 失败: {str(e)}")
 
-def _chunk_content_by_tokens(content, num_chunks):
+def _chunk_content_by_tokens(content, target_chunk_size):
     """
-    基于Token数量将内容分成指定数量的块
+    基于Token数量将内容分成指定大小的块
     
     Args:
         content: 要分块的内容
-        num_chunks: 目标块数
+        target_chunk_size: 目标块大小（tokens）
         
     Returns:
         chunks: 内容块列表
     """
-    if num_chunks <= 1:
+    # 导入token工具
+    from ..utils import token_utils
+    
+    # 获取tokenizer
+    tokenizer = token_utils.get_tokenizer('deepseek')
+    
+    # 如果内容很短，直接返回
+    total_tokens = token_utils.count_tokens(content, tokenizer)
+    if total_tokens <= target_chunk_size:
         return [content]
     
-    # 计算每块的大概字符数
-    total_chars = len(content)
-    chars_per_chunk = total_chars // num_chunks
-    
-    # 按段落分割
-    paragraphs = content.split('\n\n')
+    # 按句子分割内容（更细粒度的分割）
+    import re
+    # 按句号、问号、感叹号、换行符分割
+    sentences = re.split(r'[。！？\n]+', content)
+    sentences = [s.strip() for s in sentences if s.strip()]
     
     chunks = []
     current_chunk = ""
-    current_chars = 0
-    target_chars = chars_per_chunk
+    current_tokens = 0
     
-    for para in paragraphs:
-        para_chars = len(para) + 2  # 加上换行符
+    for sentence in sentences:
+        sentence_tokens = token_utils.count_tokens(sentence, tokenizer)
         
-        # 如果当前块加上这个段落不会超过太多，就添加
-        if current_chars + para_chars <= target_chars * 1.2 or not current_chunk:
+        # 如果单个句子就超过目标大小，单独成块
+        if sentence_tokens > target_chunk_size:
             if current_chunk:
-                current_chunk += "\n\n"
-            current_chunk += para
-            current_chars += para_chars
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+                current_tokens = 0
+            chunks.append(sentence)
+            continue
+        
+        # 如果加上这个句子会超过目标大小，先保存当前块
+        if current_tokens + sentence_tokens > target_chunk_size and current_chunk:
+            chunks.append(current_chunk.strip())
+            current_chunk = sentence
+            current_tokens = sentence_tokens
         else:
-            # 保存当前块
+            # 添加到当前块
             if current_chunk:
-                chunks.append(current_chunk)
-            
-            # 开始新块
-            current_chunk = para
-            current_chars = len(para)
-            
-            # 调整下一块的目标大小
-            remaining_chunks = num_chunks - len(chunks)
-            if remaining_chunks > 1:
-                remaining_chars = total_chars - sum(len(chunk) for chunk in chunks) - current_chars
-                target_chars = remaining_chars // (remaining_chunks - 1)
+                current_chunk += "。" + sentence
+            else:
+                current_chunk = sentence
+            current_tokens += sentence_tokens
     
     # 保存最后一块
     if current_chunk:
-        chunks.append(current_chunk)
+        chunks.append(current_chunk.strip())
     
-    # 如果块数不够，合并最后几块
-    while len(chunks) > num_chunks:
-        last_chunk = chunks.pop()
-        chunks[-1] += "\n\n" + last_chunk
+    # 记录分块结果
+    logging.info(f"内容分块完成：总tokens {total_tokens}，目标块大小 {target_chunk_size}，实际分成 {len(chunks)} 块")
+    for i, chunk in enumerate(chunks):
+        chunk_tokens = token_utils.count_tokens(chunk, tokenizer)
+        logging.info(f"  块 {i+1}: {chunk_tokens} tokens")
     
     return chunks
 
@@ -1251,13 +1309,14 @@ def _calculate_summary_tokens(repository_name, summary_dir):
     except Exception as e:
         logging.error(f"计算总结文件Token失败: {str(e)}")
 
-def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None):
+def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None, repository_name=None):
     """
     为单个内容块生成问答对
     
     Args:
         chunk_content: 内容块
         llm_config: LLM配置（可选）
+        repository_name: 信息库名称（可选）
         
     Returns:
         qa_pairs: 生成的问答对列表，格式为 [{"q": "问题", "a": "答案"}, ...]
@@ -1288,9 +1347,15 @@ def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None):
         api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
         
         # 获取提示词
-        qa_stages = merged_config.get('qa_stages', {})
-        chunk_config = qa_stages.get('chunk', {})
-        qa_prompt = chunk_config.get('prompt', '''请根据以下内容生成5-10个高质量的问答对。
+        # 如果提供了信息库名称，获取信息库级别的Prompt配置
+        if repository_name:
+            try:
+                from ..repository import repository_manager
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+                # 使用信息库级别的Prompt配置
+                qa_stages = repo_prompt_config.get('qa_stages', {})
+                chunk_config = qa_stages.get('chunk', {})
+                qa_prompt = chunk_config.get('prompt', '''请根据以下内容生成5-10个高质量的问答对。
 要求：
 1. 问题应该清晰、具体、有价值
 2. 答案应该准确、完整、基于给定内容
@@ -1298,7 +1363,36 @@ def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None):
 4. 输出格式为JSON数组，每个元素包含"q"（问题）和"a"（答案）字段
 
 内容：''')
-        qa_system_prompt = chunk_config.get('system_prompt', '你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。')
+                qa_system_prompt = chunk_config.get('system_prompt', '你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。')
+            except Exception as e:
+                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+                # 使用全局配置
+                processor_config = merged_config.get('processor', {})
+                qa_stages = processor_config.get('qa_stages', {})
+                chunk_config = qa_stages.get('chunk', {})
+                qa_prompt = chunk_config.get('prompt', '''请根据以下内容生成5-10个高质量的问答对。
+要求：
+1. 问题应该清晰、具体、有价值
+2. 答案应该准确、完整、基于给定内容
+3. 避免过于简单或重复的问题
+4. 输出格式为JSON数组，每个元素包含"q"（问题）和"a"（答案）字段
+
+内容：''')
+                qa_system_prompt = chunk_config.get('system_prompt', '你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。')
+        else:
+            # 使用全局配置
+            processor_config = merged_config.get('processor', {})
+            qa_stages = processor_config.get('qa_stages', {})
+            chunk_config = qa_stages.get('chunk', {})
+            qa_prompt = chunk_config.get('prompt', '''请根据以下内容生成5-10个高质量的问答对。
+要求：
+1. 问题应该清晰、具体、有价值
+2. 答案应该准确、完整、基于给定内容
+3. 避免过于简单或重复的问题
+4. 输出格式为JSON数组，每个元素包含"q"（问题）和"a"（答案）字段
+
+内容：''')
+            qa_system_prompt = chunk_config.get('system_prompt', '你是一个专业的问答对生成助手，擅长从文本中提取关键信息并生成有价值的问答对。')
         
         # 准备请求数据
         headers = {
@@ -1446,13 +1540,14 @@ def _generate_qa_pairs_for_chunk(chunk_content, llm_config=None):
         logging.error(f"生成问答对失败: {str(e)}")
         return []
 
-def _reduce_qa_pairs_llm(qa_pairs, llm_config=None):
+def _reduce_qa_pairs_llm(qa_pairs, llm_config=None, repository_name=None):
     """
     使用LLM去重和筛选问答对
     
     Args:
         qa_pairs: 问答对列表
         llm_config: LLM配置（可选）
+        repository_name: 信息库名称（可选）
         
     Returns:
         reduced_pairs: 去重后的问答对列表
@@ -1484,9 +1579,15 @@ def _reduce_qa_pairs_llm(qa_pairs, llm_config=None):
         api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
         
         # 获取提示词
-        qa_stages = merged_config.get('qa_stages', {})
-        reduce_config = qa_stages.get('reduce', {})
-        reduce_prompt = reduce_config.get('prompt', '''请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。
+        # 如果提供了信息库名称，获取信息库级别的Prompt配置
+        if repository_name:
+            try:
+                from ..repository import repository_manager
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+                # 使用信息库级别的Prompt配置
+                qa_stages = repo_prompt_config.get('qa_stages', {})
+                reduce_config = qa_stages.get('reduce', {})
+                reduce_prompt = reduce_config.get('prompt', '''请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。
 要求：
 1. 去除重复或高度相似的问题
 2. 保留信息量大、有深度的问答对
@@ -1494,7 +1595,36 @@ def _reduce_qa_pairs_llm(qa_pairs, llm_config=None):
 4. 输出格式与输入相同的JSON数组
 
 问答对列表：''')
-        reduce_system_prompt = reduce_config.get('system_prompt', '你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。')
+                reduce_system_prompt = reduce_config.get('system_prompt', '你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。')
+            except Exception as e:
+                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+                # 从全局配置获取提示词
+                processor_config = merged_config.get('processor', {})
+                qa_stages = processor_config.get('qa_stages', {})
+                reduce_config = qa_stages.get('reduce', {})
+                reduce_prompt = reduce_config.get('prompt', '''请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。
+要求：
+1. 去除重复或高度相似的问题
+2. 保留信息量大、有深度的问答对
+3. 确保问题和答案的准确性
+4. 输出格式与输入相同的JSON数组
+
+问答对列表：''')
+                reduce_system_prompt = reduce_config.get('system_prompt', '你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。')
+        else:
+            # 从全局配置获取提示词
+            processor_config = merged_config.get('processor', {})
+            qa_stages = processor_config.get('qa_stages', {})
+            reduce_config = qa_stages.get('reduce', {})
+            reduce_prompt = reduce_config.get('prompt', '''请对以下问答对进行去重和筛选，保留最有价值、最独特的问答对。
+要求：
+1. 去除重复或高度相似的问题
+2. 保留信息量大、有深度的问答对
+3. 确保问题和答案的准确性
+4. 输出格式与输入相同的JSON数组
+
+问答对列表：''')
+            reduce_system_prompt = reduce_config.get('system_prompt', '你是一个专业的内容审核助手，擅长识别重复或低质量的问答对，并保留最有价值的内容。')
         
         # 准备请求数据
         headers = {
@@ -1576,13 +1706,14 @@ def _reduce_qa_pairs_llm(qa_pairs, llm_config=None):
         logging.error(f"去重问答对失败: {str(e)}")
         return qa_pairs
 
-def _evaluate_qa_pairs_llm(qa_pairs, llm_config=None):
+def _evaluate_qa_pairs_llm(qa_pairs, llm_config=None, repository_name=None):
     """
     使用LLM评估问答对质量
     
     Args:
         qa_pairs: 问答对列表
         llm_config: LLM配置（可选）
+        repository_name: 信息库名称（可选）
         
     Returns:
         evaluated_pairs: 评估后的问答对列表，包含self_eval字段
@@ -1614,9 +1745,15 @@ def _evaluate_qa_pairs_llm(qa_pairs, llm_config=None):
         api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
         
         # 获取提示词
-        qa_stages = merged_config.get('qa_stages', {})
-        evaluate_config = qa_stages.get('evaluate', {})
-        evaluate_prompt = evaluate_config.get('prompt', '''请对以下问答对进行质量评估。
+        # 如果提供了信息库名称，获取信息库级别的Prompt配置
+        if repository_name:
+            try:
+                from ..repository import repository_manager
+                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+                # 使用信息库级别的Prompt配置
+                qa_stages = repo_prompt_config.get('qa_stages', {})
+                evaluate_config = qa_stages.get('evaluate', {})
+                evaluate_prompt = evaluate_config.get('prompt', '''请对以下问答对进行质量评估。
 要求：
 1. 为每个问答对添加"self_eval"字段，评分范围1-5分
 2. 5分：问题清晰具体，答案准确完整，信息价值高
@@ -1627,7 +1764,42 @@ def _evaluate_qa_pairs_llm(qa_pairs, llm_config=None):
 7. 输出格式为JSON数组，保留原有的q和a字段，添加self_eval字段
 
 问答对列表：''')
-        evaluate_system_prompt = evaluate_config.get('system_prompt', '你是一个专业的内容评估助手，擅长评估问答对的质量和价值。')
+                evaluate_system_prompt = evaluate_config.get('system_prompt', '你是一个专业的内容评估助手，擅长评估问答对的质量和价值。')
+            except Exception as e:
+                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+                # 从全局配置获取提示词
+                processor_config = merged_config.get('processor', {})
+                qa_stages = processor_config.get('qa_stages', {})
+                evaluate_config = qa_stages.get('evaluate', {})
+                evaluate_prompt = evaluate_config.get('prompt', '''请对以下问答对进行质量评估。
+要求：
+1. 为每个问答对添加"self_eval"字段，评分范围1-5分
+2. 5分：问题清晰具体，答案准确完整，信息价值高
+3. 4分：问题较好，答案基本准确，有一定价值
+4. 3分：问题和答案一般，基本可用
+5. 2分：问题或答案有明显问题，价值较低
+6. 1分：问题不清楚或答案错误，应该删除
+7. 输出格式为JSON数组，保留原有的q和a字段，添加self_eval字段
+
+问答对列表：''')
+                evaluate_system_prompt = evaluate_config.get('system_prompt', '你是一个专业的内容评估助手，擅长评估问答对的质量和价值。')
+        else:
+            # 从全局配置获取提示词
+            processor_config = merged_config.get('processor', {})
+            qa_stages = processor_config.get('qa_stages', {})
+            evaluate_config = qa_stages.get('evaluate', {})
+            evaluate_prompt = evaluate_config.get('prompt', '''请对以下问答对进行质量评估。
+要求：
+1. 为每个问答对添加"self_eval"字段，评分范围1-5分
+2. 5分：问题清晰具体，答案准确完整，信息价值高
+3. 4分：问题较好，答案基本准确，有一定价值
+4. 3分：问题和答案一般，基本可用
+5. 2分：问题或答案有明显问题，价值较低
+6. 1分：问题不清楚或答案错误，应该删除
+7. 输出格式为JSON数组，保留原有的q和a字段，添加self_eval字段
+
+问答对列表：''')
+            evaluate_system_prompt = evaluate_config.get('system_prompt', '你是一个专业的内容评估助手，擅长评估问答对的质量和价值。')
         
         # 准备请求数据
         headers = {
