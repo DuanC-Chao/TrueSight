@@ -492,11 +492,10 @@ const RepositoryDetailPage = () => {
   // 基于总结文件生成问答对
   const handleGenerateQAFromSummary = async () => {
     try {
-      // 检查总结状态是否为同步
-      const isSummarySynced = summaryFiles && files && summaryFiles.length >= files.length;
-      
-      if (!isSummarySynced) {
-        message.error('总结状态未同步，请先生成总结文件');
+      // 移除强制的总结同步检查，让用户可以随时使用该功能
+      // 检查是否有总结文件存在
+      if (!summaryFiles || summaryFiles.length === 0) {
+        message.error('未找到总结文件，请先生成总结文件');
         return;
       }
       

@@ -15,6 +15,8 @@ import time
 import threading
 import requests
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 # 导入工具模块
 from ..utils import file_utils, token_utils
@@ -27,6 +29,12 @@ config = {}
 process_status = {}
 # 处理锁
 process_lock = threading.Lock()
+
+# 创建专用于总结生成的锁
+summary_lock = threading.Lock()
+
+# 创建专用于QA生成的锁
+qa_lock = threading.Lock()
 
 def init(app_config):
     """
@@ -288,7 +296,7 @@ def start_summary_generation(repository_name, llm_config=None):
 
 def _summary_generation_worker(task_id, repository_name, llm_config=None):
     """
-    内容总结工作线程
+    内容总结工作线程（多线程版本）
     
     Args:
         task_id: 任务ID
@@ -343,10 +351,6 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
             process_status[task_id]['total_files'] = len(files)
         task_manager.update_task(task_id, metadata={'total_files': len(files)})
         
-        # 处理每个文件
-        processed_files = 0
-        all_summaries = []
-        
         # 获取内容哈希记录
         content_hashes_path = os.path.join(output_dir, 'content_hashes.json')
         content_hashes = {}
@@ -358,17 +362,23 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
             except:
                 content_hashes = {}
         
-        # 统计处理情况
-        skipped_files = 0
-        new_files = 0
-        updated_files = 0
+        # 统计处理情况（使用线程安全的计数器）
+        processing_stats = {
+            'processed_files': 0,
+            'skipped_files': 0,
+            'new_files': 0,
+            'updated_files': 0,
+            'failed_files': 0
+        }
+        
+        # 存储所有总结的线程安全列表
+        all_summaries = []
+        summaries_lock = threading.Lock()
         
         # 获取提示词
-        # 如果提供了信息库名称，获取信息库级别的Prompt配置
         if repository_name:
             try:
                 repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, config)
-                # 使用信息库级别的Prompt配置
                 summary_prompt = repo_prompt_config.get('summary_prompt', config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：'))
                 summary_system_prompt = repo_prompt_config.get('summary_system_prompt', config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。'))
             except Exception as e:
@@ -376,25 +386,13 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
                 summary_prompt = config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
                 summary_system_prompt = config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
         else:
-            # 使用全局配置
             summary_prompt = config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
             summary_system_prompt = config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
         
-        # 处理每个文件
-        for file_path in files:
+        def process_single_file(file_path):
+            """处理单个文件的总结生成"""
             try:
                 file_name = os.path.basename(file_path)
-                
-                # 检查是否在token_count文件夹中
-                if 'token_count' in file_path:
-                    logging.info(f"跳过token_count文件夹中的文件: {file_name}")
-                    continue
-                
-                # 检查是否在忽略列表中
-                ignored_filenames = config.get('ignored_filenames', [])
-                if file_name in ignored_filenames:
-                    logging.info(f"文件在忽略列表中，跳过处理: {file_name}")
-                    continue
                 
                 # 读取文件内容
                 content = file_utils.read_file(file_path)
@@ -406,38 +404,23 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
                 if config.get('incremental_processing', True) and file_name in content_hashes and content_hashes[file_name] == content_hash:
                     # 文件内容未变，跳过处理
                     logging.info(f"文件内容未变，跳过处理: {file_name}")
-                    skipped_files += 1
                     
                     # 读取已有总结
                     summary_file = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}_summary.txt")
                     if os.path.exists(summary_file):
                         summary = file_utils.read_file(summary_file)
-                        all_summaries.append(f"## {os.path.splitext(file_name)[0]}\n\n{summary}\n\n")
+                        with summaries_lock:
+                            all_summaries.append(f"## {os.path.splitext(file_name)[0]}\n\n{summary}\n\n")
                     
-                    # 更新处理进度
-                    processed_files += 1
-                    with process_lock:
-                        process_status[task_id]['processed_files'] = processed_files
-                    
-                    # 更新任务进度
-                    progress = int((processed_files / len(files)) * 100)
-                    task_manager.update_task(task_id, progress=progress,
-                                           metadata={
-                                               'processed_files': processed_files,
-                                               'skipped_files': skipped_files,
-                                               'new_files': new_files,
-                                               'updated_files': updated_files
-                                           })
-                    
-                    continue
+                    return {'status': 'skipped', 'file_name': file_name}
                 
                 # 判断是新文件还是更新文件
                 if file_name in content_hashes:
-                    updated_files += 1
                     logging.info(f"文件内容已更新，重新生成总结: {file_name}")
+                    file_status = 'updated'
                 else:
-                    new_files += 1
                     logging.info(f"新文件，生成总结: {file_name}")
+                    file_status = 'new'
                 
                 # 生成总结
                 summary = _generate_summary(content, llm_config, repository_name)
@@ -447,29 +430,65 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
                 with open(summary_file, 'w', encoding='utf-8') as f:
                     f.write(summary)
                 
-                # 添加到总结集合
-                all_summaries.append(f"## {os.path.splitext(file_name)[0]}\n\n{summary}\n\n")
+                # 线程安全地添加到总结集合
+                with summaries_lock:
+                    all_summaries.append(f"## {os.path.splitext(file_name)[0]}\n\n{summary}\n\n")
                 
-                # 更新内容哈希
-                content_hashes[file_name] = content_hash
+                # 线程安全地更新内容哈希
+                with summaries_lock:
+                    content_hashes[file_name] = content_hash
                 
-                # 更新处理进度
-                processed_files += 1
-                with process_lock:
-                    process_status[task_id]['processed_files'] = processed_files
+                return {'status': file_status, 'file_name': file_name}
                 
-                # 更新任务进度
-                progress = int((processed_files / len(files)) * 100)
-                task_manager.update_task(task_id, progress=progress,
-                                       metadata={
-                                           'processed_files': processed_files,
-                                           'skipped_files': skipped_files,
-                                           'new_files': new_files,
-                                           'updated_files': updated_files
-                                       })
-            
             except Exception as e:
                 logging.error(f"处理文件失败: {file_path}, 错误: {str(e)}")
+                return {'status': 'failed', 'file_name': file_name, 'error': str(e)}
+        
+        # 确定线程数：最多128个线程，但不超过文件数量
+        max_workers = min(128, len(files), config.get('max_summary_threads', 64))
+        logging.info(f"使用 {max_workers} 个线程并发生成总结")
+        
+        # 使用ThreadPoolExecutor进行多线程处理
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_file = {executor.submit(process_single_file, file_path): file_path for file_path in files}
+            
+            # 处理完成的任务
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    result = future.result()
+                    
+                    # 更新统计信息
+                    with summary_lock:
+                        processing_stats['processed_files'] += 1
+                        if result['status'] == 'skipped':
+                            processing_stats['skipped_files'] += 1
+                        elif result['status'] == 'new':
+                            processing_stats['new_files'] += 1
+                        elif result['status'] == 'updated':
+                            processing_stats['updated_files'] += 1
+                        elif result['status'] == 'failed':
+                            processing_stats['failed_files'] += 1
+                        
+                        # 更新进度
+                        progress = int((processing_stats['processed_files'] / len(files)) * 100)
+                        
+                        # 更新任务状态
+                        with process_lock:
+                            process_status[task_id]['processed_files'] = processing_stats['processed_files']
+                        
+                        # 更新任务管理器
+                        task_manager.update_task(task_id, progress=progress, metadata=processing_stats.copy())
+                        
+                        if processing_stats['processed_files'] % 10 == 0:  # 每处理10个文件输出一次进度
+                            logging.info(f"总结生成进度: {processing_stats['processed_files']}/{len(files)} ({progress}%)")
+                
+                except Exception as e:
+                    logging.error(f"处理文件任务失败: {file_path}, 错误: {str(e)}")
+                    with summary_lock:
+                        processing_stats['processed_files'] += 1
+                        processing_stats['failed_files'] += 1
         
         # 保存内容哈希记录
         with open(content_hashes_path, 'w', encoding='utf-8') as f:
@@ -480,7 +499,8 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
         with open(all_summaries_file, 'w', encoding='utf-8') as f:
             f.write("# 信息库总结\n\n")
             f.write(f"信息库: {repository_name}\n")
-            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"并发线程数: {max_workers}\n\n")
             f.write("---\n\n")
             f.write("".join(all_summaries))
         
@@ -493,7 +513,7 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
             logging.error(f"更新信息库更新时间失败: {str(e)}")
         
         # 自动计算总结文件的Token数量
-        if new_files > 0 or updated_files > 0:
+        if processing_stats['new_files'] > 0 or processing_stats['updated_files'] > 0:
             logging.info("总结生成完成，开始自动计算Token...")
             try:
                 _calculate_summary_tokens(repository_name, output_dir)
@@ -507,17 +527,11 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
             process_status[task_id]['end_time'] = datetime.now().isoformat()
         
         # 更新任务管理器中的任务状态
-        task_manager.update_task(task_id, status='completed', progress=100,
-                               result={
-                                   'total_files': len(files),
-                                   'processed_files': processed_files,
-                                   'skipped_files': skipped_files,
-                                   'new_files': new_files,
-                                   'updated_files': updated_files
-                               })
+        task_manager.update_task(task_id, status='completed', progress=100, result=processing_stats)
         
-        logging.info(f"内容总结任务 {task_id} 已完成，信息库: {repository_name}")
-        logging.info(f"处理统计 - 总文件数: {len(files)}, 已处理: {processed_files}, 跳过: {skipped_files}, 新文件: {new_files}, 更新文件: {updated_files}")
+        logging.info(f"多线程内容总结任务 {task_id} 已完成，信息库: {repository_name}")
+        logging.info(f"使用了 {max_workers} 个并发线程")
+        logging.info(f"处理统计 - 总文件数: {len(files)}, 已处理: {processing_stats['processed_files']}, 跳过: {processing_stats['skipped_files']}, 新文件: {processing_stats['new_files']}, 更新文件: {processing_stats['updated_files']}, 失败: {processing_stats['failed_files']}")
     
     except Exception as e:
         # 更新任务状态为失败
@@ -529,11 +543,11 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
         # 更新任务管理器中的任务状态
         task_manager.update_task(task_id, status='failed', error=str(e))
         
-        logging.error(f"内容总结任务 {task_id} 失败: {str(e)}")
+        logging.error(f"多线程内容总结任务 {task_id} 失败: {str(e)}")
 
 def _generate_summary(content, llm_config=None, repository_name=None):
     """
-    生成内容总结
+    生成内容总结（支持大文件切割）
     
     Args:
         content: 要总结的内容
@@ -560,102 +574,347 @@ def _generate_summary(content, llm_config=None, repository_name=None):
         if not api_key:
             raise ValueError(f"未设置{provider}的API密钥")
         
-        # 获取API基础URL
-        api_base_urls = {
-            'openai': 'https://api.openai.com/v1/chat/completions',
-            'qwen': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
-            'deepseek': 'https://api.deepseek.com/v1/chat/completions'
-        }
-        api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
+        # 检查文件大小，如果超过55000 tokens则进行切割
+        from ..utils import token_utils
+        tokenizer = token_utils.get_tokenizer('openai')  # 使用GPT4o tokenizer
+        total_tokens = token_utils.count_tokens(content, tokenizer)
         
-        # 获取提示词
-        # 如果提供了信息库名称，获取信息库级别的Prompt配置
-        if repository_name:
-            try:
-                repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
-                # 使用信息库级别的Prompt配置
-                summary_prompt = repo_prompt_config.get('summary_prompt', merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：'))
-                summary_system_prompt = repo_prompt_config.get('summary_system_prompt', merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。'))
-            except Exception as e:
-                logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
-                summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
-                summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+        if total_tokens > 55000:
+            logging.info(f"文件过大（{total_tokens} tokens），开始分块处理...")
+            
+            # 切割内容为不超过55000 tokens的块
+            chunks = _chunk_content_for_summary(content, 55000)
+            logging.info(f"文件已分割为 {len(chunks)} 个块")
+            
+            # 分别为每个块生成总结
+            chunk_summaries = []
+            for i, chunk in enumerate(chunks):
+                logging.info(f"处理第 {i+1}/{len(chunks)} 块...")
+                chunk_summary = _generate_single_summary(chunk, merged_config, provider, api_key, model, repository_name)
+                chunk_summaries.append(chunk_summary)
+                logging.info(f"第 {i+1} 块总结完成")
+            
+            # 合并所有块的总结
+            logging.info("开始合并块总结...")
+            combined_content = "\n\n".join([f"## 部分 {i+1}\n{summary}" for i, summary in enumerate(chunk_summaries)])
+            
+            # 对合并后的总结再次进行总结
+            final_summary = _generate_final_summary(combined_content, merged_config, provider, api_key, model, repository_name)
+            logging.info("大文件总结合并完成")
+            
+            return final_summary
         else:
-            # 使用全局配置
-            summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
-            summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
-        
-        # 准备请求数据
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {api_key}'
-        }
-        
-        # 特殊处理Qwen API
-        if provider == 'qwen':
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {api_key}',
-                'X-DashScope-SSE': 'disable'
-            }
-        
-        data = {
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': summary_system_prompt},
-                {'role': 'user', 'content': f"{summary_prompt}\n\n{content}"}
-            ],
-            'temperature': merged_config.get('temperature', 0.2),
-            'max_tokens': merged_config.get('max_tokens', 2000)
-        }
-        
-        # 发送请求，增加超时时间并添加重试机制
-        max_retries = 3
-        timeout = 900  # 15分钟
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(api_base_url, headers=headers, json=data, timeout=timeout)
-                
-                # 检查响应
-                if response.status_code != 200:
-                    error_msg = f"API请求失败: {response.status_code} {response.text}"
-                    logging.error(error_msg)
-                    raise Exception(error_msg)
-                
-                # 解析响应
-                response_data = response.json()
-                
-                # 提取总结
-                if provider == 'openai' or provider == 'deepseek' or provider == 'qwen':
-                    summary = response_data['choices'][0]['message']['content']
-                else:
-                    summary = response_data['choices'][0]['message']['content']
-                
-                # 清理和格式化总结
-                summary = summary.strip()
-                
-                return summary
-                
-            except requests.exceptions.Timeout as e:
-                logging.warning(f"总结生成超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt == max_retries - 1:
-                    raise Exception(f"总结生成超时，已重试 {max_retries} 次")
-                # 等待一段时间后重试
-                import time
-                time.sleep(5 * (attempt + 1))  # 递增等待时间
-                
-            except requests.exceptions.RequestException as e:
-                logging.warning(f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt == max_retries - 1:
-                    raise Exception(f"网络请求失败，已重试 {max_retries} 次: {str(e)}")
-                # 等待一段时间后重试
-                import time
-                time.sleep(3 * (attempt + 1))
+            # 文件不大，直接处理
+            return _generate_single_summary(content, merged_config, provider, api_key, model, repository_name)
     
     except Exception as e:
         logging.error(f"生成总结失败: {str(e)}")
         raise
+
+def _chunk_content_for_summary(content, max_tokens):
+    """
+    为总结生成切割内容
+    
+    Args:
+        content: 要切割的内容
+        max_tokens: 最大token数
+        
+    Returns:
+        chunks: 内容块列表
+    """
+    from ..utils import token_utils
+    
+    # 获取tokenizer
+    tokenizer = token_utils.get_tokenizer('openai')
+    
+    # 如果内容不超过最大限制，直接返回
+    total_tokens = token_utils.count_tokens(content, tokenizer)
+    if total_tokens <= max_tokens:
+        return [content]
+    
+    # 按段落分割内容（优先保持段落完整性）
+    import re
+    # 按双换行符分割段落
+    paragraphs = re.split(r'\n\s*\n', content)
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    
+    chunks = []
+    current_chunk = ""
+    current_tokens = 0
+    
+    for paragraph in paragraphs:
+        paragraph_tokens = token_utils.count_tokens(paragraph, tokenizer)
+        
+        # 如果单个段落就超过最大限制，按句子进一步分割
+        if paragraph_tokens > max_tokens:
+            # 先保存当前块
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+                current_tokens = 0
+            
+            # 按句子分割大段落
+            sentences = re.split(r'[。！？\n]+', paragraph)
+            sentences = [s.strip() for s in sentences if s.strip()]
+            
+            for sentence in sentences:
+                sentence_tokens = token_utils.count_tokens(sentence, tokenizer)
+                
+                # 如果单句还是太长，直接作为一个块
+                if sentence_tokens > max_tokens:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = ""
+                        current_tokens = 0
+                    chunks.append(sentence)
+                    continue
+                
+                # 检查加上这句话是否会超限
+                if current_tokens + sentence_tokens > max_tokens and current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+                    current_tokens = sentence_tokens
+                else:
+                    if current_chunk:
+                        current_chunk += "。" + sentence
+                    else:
+                        current_chunk = sentence
+                    current_tokens += sentence_tokens
+            
+            continue
+        
+        # 检查加上这个段落是否会超过限制
+        if current_tokens + paragraph_tokens > max_tokens and current_chunk:
+            chunks.append(current_chunk.strip())
+            current_chunk = paragraph
+            current_tokens = paragraph_tokens
+        else:
+            if current_chunk:
+                current_chunk += "\n\n" + paragraph
+            else:
+                current_chunk = paragraph
+            current_tokens += paragraph_tokens
+    
+    # 保存最后一块
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    # 记录分块结果
+    logging.info(f"内容分块完成：总tokens {total_tokens}，目标块大小 {max_tokens}，实际分成 {len(chunks)} 块")
+    for i, chunk in enumerate(chunks):
+        chunk_tokens = token_utils.count_tokens(chunk, tokenizer)
+        logging.info(f"  块 {i+1}: {chunk_tokens} tokens")
+    
+    return chunks
+
+def _generate_single_summary(content, merged_config, provider, api_key, model, repository_name):
+    """
+    生成单个内容块的总结
+    
+    Args:
+        content: 要总结的内容
+        merged_config: 合并后的配置
+        provider: LLM提供商
+        api_key: API密钥
+        model: 模型名称
+        repository_name: 信息库名称
+        
+    Returns:
+        summary: 生成的总结
+    """
+    # 获取API基础URL
+    api_base_urls = {
+        'openai': 'https://api.openai.com/v1/chat/completions',
+        'qwen': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+        'deepseek': 'https://api.deepseek.com/v1/chat/completions'
+    }
+    api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
+    
+    # 获取提示词
+    # 如果提供了信息库名称，获取信息库级别的Prompt配置
+    if repository_name:
+        try:
+            repo_prompt_config = repository_manager.get_merged_prompt_config(repository_name, merged_config)
+            # 使用信息库级别的Prompt配置
+            summary_prompt = repo_prompt_config.get('summary_prompt', merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：'))
+            summary_system_prompt = repo_prompt_config.get('summary_system_prompt', merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。'))
+        except Exception as e:
+            logging.warning(f"获取信息库Prompt配置失败，使用全局配置: {str(e)}")
+            summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+            summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+    else:
+        # 使用全局配置
+        summary_prompt = merged_config.get('summary_prompt', '请对以下内容进行总结，突出关键信息：')
+        summary_system_prompt = merged_config.get('summary_system_prompt', '你是一个专业的文档总结助手，擅长提取文本中的关键信息并生成简洁明了的总结。')
+    
+    # 准备请求数据
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
+    
+    # 特殊处理Qwen API
+    if provider == 'qwen':
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+            'X-DashScope-SSE': 'disable'
+        }
+    
+    data = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': summary_system_prompt},
+            {'role': 'user', 'content': f"{summary_prompt}\n\n{content}"}
+        ],
+        'temperature': merged_config.get('temperature', 0.2),
+        'max_tokens': merged_config.get('max_tokens', 2000)
+    }
+    
+    # 发送请求，增加超时时间并添加重试机制
+    max_retries = 3
+    timeout = 900  # 15分钟
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(api_base_url, headers=headers, json=data, timeout=timeout)
+            
+            # 检查响应
+            if response.status_code != 200:
+                error_msg = f"API请求失败: {response.status_code} {response.text}"
+                logging.error(error_msg)
+                raise Exception(error_msg)
+            
+            # 解析响应
+            response_data = response.json()
+            
+            # 提取总结
+            if provider == 'openai' or provider == 'deepseek' or provider == 'qwen':
+                summary = response_data['choices'][0]['message']['content']
+            else:
+                summary = response_data['choices'][0]['message']['content']
+            
+            # 清理和格式化总结
+            summary = summary.strip()
+            
+            return summary
+            
+        except requests.exceptions.Timeout as e:
+            logging.warning(f"总结生成超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"总结生成超时，已重试 {max_retries} 次")
+            # 等待一段时间后重试
+            import time
+            time.sleep(5 * (attempt + 1))  # 递增等待时间
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"网络请求失败，已重试 {max_retries} 次: {str(e)}")
+            # 等待一段时间后重试
+            import time
+            time.sleep(3 * (attempt + 1))
+
+def _generate_final_summary(combined_content, merged_config, provider, api_key, model, repository_name):
+    """
+    生成最终合并总结
+    
+    Args:
+        combined_content: 已合并的块总结内容
+        merged_config: 合并后的配置
+        provider: LLM提供商
+        api_key: API密钥
+        model: 模型名称
+        repository_name: 信息库名称
+        
+    Returns:
+        final_summary: 最终总结
+    """
+    # 获取API基础URL
+    api_base_urls = {
+        'openai': 'https://api.openai.com/v1/chat/completions',
+        'qwen': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+        'deepseek': 'https://api.deepseek.com/v1/chat/completions'
+    }
+    api_base_url = api_base_urls.get(provider, api_base_urls['openai'])
+    
+    # 合并总结的特殊提示词
+    merge_prompt = """请将以下分段总结合并为一个完整、连贯的总结。
+要求：
+1. 保持所有重要信息
+2. 去除重复内容
+3. 确保逻辑连贯
+4. 突出关键要点
+
+分段总结内容："""
+    
+    merge_system_prompt = "你是一个专业的文档整理助手，擅长将多个分段总结合并为一个完整、连贯的总结文档。"
+    
+    # 准备请求数据
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
+    
+    # 特殊处理Qwen API
+    if provider == 'qwen':
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+            'X-DashScope-SSE': 'disable'
+        }
+    
+    data = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': merge_system_prompt},
+            {'role': 'user', 'content': f"{merge_prompt}\n\n{combined_content}"}
+        ],
+        'temperature': merged_config.get('temperature', 0.2),
+        'max_tokens': merged_config.get('max_tokens', 3000)  # 合并总结可能需要更多token
+    }
+    
+    # 发送请求
+    max_retries = 3
+    timeout = 900
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(api_base_url, headers=headers, json=data, timeout=timeout)
+            
+            # 检查响应
+            if response.status_code != 200:
+                error_msg = f"合并总结API请求失败: {response.status_code} {response.text}"
+                logging.error(error_msg)
+                raise Exception(error_msg)
+            
+            # 解析响应
+            response_data = response.json()
+            
+            # 提取最终总结
+            if provider == 'openai' or provider == 'deepseek' or provider == 'qwen':
+                final_summary = response_data['choices'][0]['message']['content']
+            else:
+                final_summary = response_data['choices'][0]['message']['content']
+            
+            # 清理和格式化总结
+            final_summary = final_summary.strip()
+            
+            return final_summary
+            
+        except requests.exceptions.Timeout as e:
+            logging.warning(f"合并总结超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"合并总结超时，已重试 {max_retries} 次")
+            import time
+            time.sleep(5 * (attempt + 1))
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"合并总结请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"合并总结请求失败，已重试 {max_retries} 次: {str(e)}")
+            import time
+            time.sleep(3 * (attempt + 1))
 
 def start_qa_generation(repository_name, llm_config=None, use_summary_files=None):
     """
@@ -703,7 +962,7 @@ def start_qa_generation(repository_name, llm_config=None, use_summary_files=None
 
 def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary_files=None):
     """
-    问答对生成工作线程
+    问答对生成工作线程（多线程版本）
     
     Args:
         task_id: 任务ID
@@ -911,12 +1170,17 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
         token_count_dir = os.path.join(repository_dir, 'token_count')
         token_file_path = os.path.join(token_count_dir, 'token_count_deepseek.txt')
         
-        # 如果使用总结文件但没有Token计算，先计算Token
+        # 移除强制Token计算依赖，让基于总结文件的QA生成随时可用
+        # 如果使用总结文件但没有Token计算，尝试计算Token（非强制）
         if use_summary_files and not os.path.exists(token_file_path):
-            logging.info("总结文件缺少Token计算，开始计算...")
-            _calculate_summary_tokens(repository_name, summary_dir)
+            logging.info("总结文件缺少Token计算，尝试计算（非强制）...")
+            try:
+                _calculate_summary_tokens(repository_name, summary_dir)
+                logging.info("总结文件Token计算完成")
+            except Exception as e:
+                logging.warning(f"总结文件Token计算失败，但不影响QA生成: {str(e)}")
         
-        # 加载Token计算结果
+        # 加载Token计算结果（如果存在）
         file_token_map = {}
         if os.path.exists(token_file_path):
             try:
@@ -933,6 +1197,8 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 logging.info(f"加载了 {len(file_token_map)} 个文件的Token信息")
             except Exception as e:
                 logging.error(f"读取Token文件失败: {str(e)}")
+        else:
+            logging.info("未找到Token计算文件，将跳过基于Token的分块优化")
         
         # 获取内容哈希记录
         content_hashes_path = os.path.join(json_output_dir, 'content_hashes.json')
@@ -945,29 +1211,31 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
             except:
                 content_hashes = {}
         
-        # 统计处理情况
-        skipped_files = 0
-        new_files = 0
-        updated_files = 0
+        # 统计处理情况（使用线程安全的计数器）
+        processing_stats = {
+            'processed_files': 0,
+            'skipped_files': 0,
+            'new_files': 0,
+            'updated_files': 0,
+            'failed_files': 0,
+            'total_qa_pairs': 0
+        }
         
-        # 处理每个文件
-        processed_files = 0
-        total_qa_pairs = 0
-        
-        for file_path in files:
+        def process_single_file_qa(file_path):
+            """处理单个文件的QA生成"""
             try:
                 file_name = os.path.basename(file_path)
                 
                 # 检查是否在token_count文件夹中
                 if 'token_count' in file_path:
                     logging.info(f"跳过token_count文件夹中的文件: {file_name}")
-                    continue
+                    return {'status': 'skipped', 'file_name': file_name, 'qa_pairs': 0}
                 
                 # 检查是否在忽略列表中
                 ignored_filenames = config.get('ignored_filenames', [])
                 if file_name in ignored_filenames:
                     logging.info(f"文件在忽略列表中，跳过处理: {file_name}")
-                    continue
+                    return {'status': 'skipped', 'file_name': file_name, 'qa_pairs': 0}
                 
                 # 读取文件内容
                 content = file_utils.read_file(file_path)
@@ -979,43 +1247,27 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 if config.get('incremental_processing', True) and file_name in content_hashes and content_hashes[file_name] == content_hash:
                     # 文件内容未变，跳过处理
                     logging.info(f"文件内容未变，跳过处理: {file_name}")
-                    skipped_files += 1
                     
                     # 计算已有问答对数量
                     json_file = os.path.join(json_output_dir, f"{os.path.splitext(file_name)[0]}.json")
+                    qa_pairs_count = 0
                     if os.path.exists(json_file):
                         try:
                             with open(json_file, 'r', encoding='utf-8') as f:
                                 existing_qa_pairs = json.load(f)
-                            total_qa_pairs += len(existing_qa_pairs)
+                            qa_pairs_count = len(existing_qa_pairs)
                         except:
                             pass
                     
-                    # 更新处理进度
-                    processed_files += 1
-                    with process_lock:
-                        process_status[task_id]['processed_files'] = processed_files
-                    
-                    # 更新任务进度
-                    progress = int((processed_files / len(files)) * 100)
-                    task_manager.update_task(task_id, progress=progress,
-                                           metadata={
-                                               'processed_files': processed_files,
-                                               'skipped_files': skipped_files,
-                                               'new_files': new_files,
-                                               'updated_files': updated_files,
-                                               'total_qa_pairs': total_qa_pairs
-                                           })
-                    
-                    continue
+                    return {'status': 'skipped', 'file_name': file_name, 'qa_pairs': qa_pairs_count}
                 
                 # 判断是新文件还是更新文件
                 if file_name in content_hashes:
-                    updated_files += 1
                     logging.info(f"文件内容已更新，重新生成问答对: {file_name}")
+                    file_status = 'updated'
                 else:
-                    new_files += 1
                     logging.info(f"新文件，生成问答对: {file_name}")
+                    file_status = 'new'
                 
                 # 获取文件的Token数量
                 file_tokens = file_token_map.get(file_name, 0)
@@ -1042,7 +1294,7 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                 
                 if not all_qa_pairs_for_file:
                     logging.warning(f"文件 {file_name} 第一阶段未生成任何问答对")
-                    continue
+                    return {'status': 'failed', 'file_name': file_name, 'qa_pairs': 0, 'error': '未生成任何问答对'}
                 
                 # 保存第一阶段结果
                 file_base = os.path.splitext(file_name)[0]
@@ -1089,31 +1341,64 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
                         f.write(f"{question}\t{answer}\n")
                 logging.info(f"  CSV文件已生成: {csv_output_path}")
                 
-                # 更新统计
-                total_qa_pairs += len(current_qa_pairs)
+                # 线程安全地更新内容哈希
+                with qa_lock:
+                    content_hashes[file_name] = content_hash
                 
-                # 更新内容哈希
-                content_hashes[file_name] = content_hash
+                return {'status': file_status, 'file_name': file_name, 'qa_pairs': len(current_qa_pairs)}
                 
-                # 更新处理进度
-                processed_files += 1
-                with process_lock:
-                    process_status[task_id]['processed_files'] = processed_files
-                    process_status[task_id]['total_qa_pairs'] = total_qa_pairs
-                
-                # 更新任务进度
-                progress = int((processed_files / len(files)) * 100)
-                task_manager.update_task(task_id, progress=progress,
-                                       metadata={
-                                           'processed_files': processed_files,
-                                           'skipped_files': skipped_files,
-                                           'new_files': new_files,
-                                           'updated_files': updated_files,
-                                           'total_qa_pairs': total_qa_pairs
-                                       })
-            
             except Exception as e:
                 logging.error(f"处理文件失败: {file_path}, 错误: {str(e)}")
+                return {'status': 'failed', 'file_name': file_name, 'qa_pairs': 0, 'error': str(e)}
+        
+        # 确定线程数：最多128个线程，但不超过文件数量
+        max_workers = min(128, len(files), config.get('max_qa_threads', 64))
+        logging.info(f"使用 {max_workers} 个线程并发生成QA对")
+        
+        # 使用ThreadPoolExecutor进行多线程处理
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_file = {executor.submit(process_single_file_qa, file_path): file_path for file_path in files}
+            
+            # 处理完成的任务
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    result = future.result()
+                    
+                    # 更新统计信息
+                    with qa_lock:
+                        processing_stats['processed_files'] += 1
+                        processing_stats['total_qa_pairs'] += result['qa_pairs']
+                        
+                        if result['status'] == 'skipped':
+                            processing_stats['skipped_files'] += 1
+                        elif result['status'] == 'new':
+                            processing_stats['new_files'] += 1
+                        elif result['status'] == 'updated':
+                            processing_stats['updated_files'] += 1
+                        elif result['status'] == 'failed':
+                            processing_stats['failed_files'] += 1
+                        
+                        # 更新进度
+                        progress = int((processing_stats['processed_files'] / len(files)) * 100)
+                        
+                        # 更新任务状态
+                        with process_lock:
+                            process_status[task_id]['processed_files'] = processing_stats['processed_files']
+                            process_status[task_id]['total_qa_pairs'] = processing_stats['total_qa_pairs']
+                        
+                        # 更新任务管理器
+                        task_manager.update_task(task_id, progress=progress, metadata=processing_stats.copy())
+                        
+                        if processing_stats['processed_files'] % 10 == 0:  # 每处理10个文件输出一次进度
+                            logging.info(f"QA生成进度: {processing_stats['processed_files']}/{len(files)} ({progress}%)")
+                
+                except Exception as e:
+                    logging.error(f"处理文件任务失败: {file_path}, 错误: {str(e)}")
+                    with qa_lock:
+                        processing_stats['processed_files'] += 1
+                        processing_stats['failed_files'] += 1
         
         # 保存内容哈希记录
         with open(content_hashes_path, 'w', encoding='utf-8') as f:
@@ -1133,19 +1418,11 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
             process_status[task_id]['end_time'] = datetime.now().isoformat()
         
         # 更新任务管理器中的任务状态
-        task_manager.update_task(task_id, status='completed', progress=100,
-                               result={
-                                   'total_files': len(files),
-                                   'processed_files': processed_files,
-                                   'skipped_files': skipped_files,
-                                   'new_files': new_files,
-                                   'updated_files': updated_files,
-                                   'total_qa_pairs': total_qa_pairs,
-                                   'use_summary_files': use_summary_files
-                               })
+        task_manager.update_task(task_id, status='completed', progress=100, result=processing_stats)
         
-        logging.info(f"问答对生成任务 {task_id} 已完成，信息库: {repository_name}, 总问答对数: {total_qa_pairs}")
-        logging.info(f"处理统计 - 总文件数: {len(files)}, 已处理: {processed_files}, 跳过: {skipped_files}, 新文件: {new_files}, 更新文件: {updated_files}")
+        logging.info(f"多线程问答对生成任务 {task_id} 已完成，信息库: {repository_name}")
+        logging.info(f"使用了 {max_workers} 个并发线程")
+        logging.info(f"处理统计 - 总文件数: {len(files)}, 已处理: {processing_stats['processed_files']}, 跳过: {processing_stats['skipped_files']}, 新文件: {processing_stats['new_files']}, 更新文件: {processing_stats['updated_files']}, 失败: {processing_stats['failed_files']}, 总QA对数: {processing_stats['total_qa_pairs']}")
     
     except Exception as e:
         # 更新任务状态为失败
@@ -1157,7 +1434,7 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
         # 更新任务管理器中的任务状态
         task_manager.update_task(task_id, status='failed', error=str(e))
         
-        logging.error(f"问答对生成任务 {task_id} 失败: {str(e)}")
+        logging.error(f"多线程问答对生成任务 {task_id} 失败: {str(e)}")
 
 def _chunk_content_by_tokens(content, target_chunk_size):
     """

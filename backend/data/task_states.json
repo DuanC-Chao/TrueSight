@@ -851,5 +851,261 @@
       "updated_files": 0,
       "total_qa_pairs": 54
     }
+  },
+  "summary_1749027122": {
+    "id": "summary_1749027122",
+    "type": "summary",
+    "repository_name": "UnniversitiesDB_Batch_01",
+    "status": "cancelled",
+    "progress": 4,
+    "created_at": "2025-06-04T16:52:02.218685",
+    "updated_at": "2025-06-04T19:42:38.472933",
+    "started_at": "2025-06-04T16:52:02.221130",
+    "completed_at": "2025-06-04T16:54:43.350642",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 139,
+      "skipped_files": 0,
+      "new_files": 140,
+      "updated_files": 0
+    }
+  },
+  "token_1749030390": {
+    "id": "token_1749030390",
+    "type": "token",
+    "repository_name": "UnniversitiesDB_Batch_01",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T17:46:30.646525",
+    "updated_at": "2025-06-04T17:48:58.522090",
+    "started_at": "2025-06-04T17:46:30.649084",
+    "completed_at": "2025-06-04T17:48:58.522088",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 30161342,
+        "token_count_deepseek": 30745301,
+        "token_count_jina": 38078439
+      }
+    },
+    "metadata": {
+      "processed_files": 6516
+    }
+  },
+  "token_1749037167": {
+    "id": "token_1749037167",
+    "type": "token",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T19:39:27.429854",
+    "updated_at": "2025-06-04T19:40:11.573737",
+    "started_at": "2025-06-04T19:39:27.431509",
+    "completed_at": "2025-06-04T19:40:11.573735",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 7446733,
+        "token_count_deepseek": 7560535,
+        "token_count_jina": 5639457
+      }
+    },
+    "metadata": {
+      "processed_files": 522
+    }
+  },
+  "summary_1749037231": {
+    "id": "summary_1749037231",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 0,
+    "created_at": "2025-06-04T19:40:31.928102",
+    "updated_at": "2025-06-04T19:42:32.340294",
+    "started_at": "2025-06-04T19:40:31.933129",
+    "completed_at": "2025-06-04T20:01:48.273642",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 3,
+      "skipped_files": 0,
+      "new_files": 3,
+      "updated_files": 0
+    }
+  },
+  "summary_1749038528": {
+    "id": "summary_1749038528",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 57,
+    "created_at": "2025-06-04T20:02:08.435941",
+    "updated_at": "2025-06-04T20:14:33.200875",
+    "started_at": "2025-06-04T20:02:08.442721",
+    "completed_at": "2025-06-04T20:17:18.945609",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 301,
+      "skipped_files": 0,
+      "new_files": 290,
+      "updated_files": 0,
+      "failed_files": 11
+    }
+  },
+  "summary_1749039469": {
+    "id": "summary_1749039469",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 99,
+    "created_at": "2025-06-04T20:17:49.706334",
+    "updated_at": "2025-06-04T20:22:48.501220",
+    "started_at": "2025-06-04T20:17:49.709609",
+    "completed_at": "2025-06-04T20:30:35.903682",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 520,
+      "skipped_files": 0,
+      "new_files": 503,
+      "updated_files": 0,
+      "failed_files": 17
+    }
+  },
+  "summary_1749040240": {
+    "id": "summary_1749040240",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 22,
+    "created_at": "2025-06-04T20:30:40.701066",
+    "updated_at": "2025-06-04T20:31:49.614594",
+    "started_at": "2025-06-04T20:30:40.706283",
+    "completed_at": "2025-06-04T20:31:44.457814",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 120,
+      "skipped_files": 0,
+      "new_files": 111,
+      "updated_files": 0,
+      "failed_files": 9
+    }
+  },
+  "summary_1749040731": {
+    "id": "summary_1749040731",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 53,
+    "created_at": "2025-06-04T20:38:51.952052",
+    "updated_at": "2025-06-04T21:07:24.584567",
+    "started_at": "2025-06-04T20:38:51.956797",
+    "completed_at": "2025-06-04T21:08:21.960075",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 280,
+      "skipped_files": 0,
+      "new_files": 270,
+      "updated_files": 0,
+      "failed_files": 10
+    }
+  },
+  "summary_1749042504": {
+    "id": "summary_1749042504",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 12,
+    "created_at": "2025-06-04T21:08:24.960237",
+    "updated_at": "2025-06-04T21:09:07.247867",
+    "started_at": "2025-06-04T21:08:24.963166",
+    "completed_at": "2025-06-04T21:10:55.836103",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 65,
+      "skipped_files": 0,
+      "new_files": 59,
+      "updated_files": 0,
+      "failed_files": 6
+    }
+  },
+  "summary_1749042656": {
+    "id": "summary_1749042656",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "cancelled",
+    "progress": 15,
+    "created_at": "2025-06-04T21:10:56.543974",
+    "updated_at": "2025-06-04T21:11:52.823327",
+    "started_at": "2025-06-04T21:10:56.546100",
+    "completed_at": "2025-06-04T21:13:14.181927",
+    "error": null,
+    "result": null,
+    "metadata": {
+      "processed_files": 80,
+      "skipped_files": 0,
+      "new_files": 73,
+      "updated_files": 0,
+      "failed_files": 7
+    }
+  },
+  "summary_1749042802": {
+    "id": "summary_1749042802",
+    "type": "summary",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-04T21:13:22.054951",
+    "updated_at": "2025-06-04T22:12:38.266999",
+    "started_at": "2025-06-04T21:13:22.058219",
+    "completed_at": "2025-06-04T22:12:38.266998",
+    "error": null,
+    "result": {
+      "processed_files": 522,
+      "skipped_files": 0,
+      "new_files": 522,
+      "updated_files": 0,
+      "failed_files": 0
+    },
+    "metadata": {
+      "processed_files": 522,
+      "skipped_files": 0,
+      "new_files": 522,
+      "updated_files": 0,
+      "failed_files": 0
+    }
+  },
+  "qa_1749105589": {
+    "id": "qa_1749105589",
+    "type": "qa",
+    "repository_name": "UniversitiesDB_Test_01",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-05T14:39:49.177320",
+    "updated_at": "2025-06-05T14:44:45.954910",
+    "started_at": "2025-06-05T14:39:49.183246",
+    "completed_at": "2025-06-05T14:44:45.954907",
+    "error": null,
+    "result": {
+      "processed_files": 522,
+      "skipped_files": 0,
+      "new_files": 522,
+      "updated_files": 0,
+      "failed_files": 0,
+      "total_qa_pairs": 4766
+    },
+    "metadata": {
+      "processed_files": 522,
+      "skipped_files": 0,
+      "new_files": 522,
+      "updated_files": 0,
+      "failed_files": 0,
+      "total_qa_pairs": 4766
+    }
   }
 }
