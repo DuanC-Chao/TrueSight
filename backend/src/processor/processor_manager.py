@@ -521,6 +521,19 @@ def _summary_generation_worker(task_id, repository_name, llm_config=None):
             except Exception as e:
                 logging.error(f"自动计算总结文件Token失败: {str(e)}")
         
+        # 检查并处理部分同步模式的失败文件（统一检查）
+        try:
+            partial_sync_config = repository_manager.get_partial_sync_config(repository_name)
+            if partial_sync_config.get('partial_sync_enabled', False):
+                failure_marker = partial_sync_config.get('failure_marker', '对不起，文件内容异常，我无法完成总结任务')
+                removed_files = _check_and_remove_failed_summaries(output_dir, failure_marker, content_hashes)
+                if removed_files:
+                    logging.info(f"部分同步模式：已删除 {len(removed_files)} 个包含失败标识的总结文件")
+                    for removed_file in removed_files:
+                        logging.info(f"  删除文件: {removed_file}")
+        except Exception as e:
+            logging.error(f"部分同步模式失败文件检查失败: {str(e)}")
+        
         # 更新任务状态
         with process_lock:
             process_status[task_id]['status'] = 'completed'
@@ -1412,6 +1425,28 @@ def _qa_generation_worker(task_id, repository_name, llm_config=None, use_summary
         except Exception as e:
             logging.error(f"更新信息库更新时间失败: {str(e)}")
         
+        # 自动计算总结文件的Token数量
+        if processing_stats['new_files'] > 0 or processing_stats['updated_files'] > 0:
+            logging.info("总结生成完成，开始自动计算Token...")
+            try:
+                _calculate_summary_tokens(repository_name, output_dir)
+                logging.info("总结文件Token计算完成")
+            except Exception as e:
+                logging.error(f"自动计算总结文件Token失败: {str(e)}")
+        
+        # 检查并处理部分同步模式的失败文件（统一检查）
+        try:
+            partial_sync_config = repository_manager.get_partial_sync_config(repository_name)
+            if partial_sync_config.get('partial_sync_enabled', False):
+                failure_marker = partial_sync_config.get('failure_marker', '对不起，文件内容异常，我无法完成总结任务')
+                removed_files = _check_and_remove_failed_summaries(output_dir, failure_marker, content_hashes)
+                if removed_files:
+                    logging.info(f"部分同步模式：已删除 {len(removed_files)} 个包含失败标识的总结文件")
+                    for removed_file in removed_files:
+                        logging.info(f"  删除文件: {removed_file}")
+        except Exception as e:
+            logging.error(f"部分同步模式失败文件检查失败: {str(e)}")
+        
         # 更新任务状态
         with process_lock:
             process_status[task_id]['status'] = 'completed'
@@ -2188,3 +2223,44 @@ def get_process_status(task_id):
     # 兼容旧的状态存储
     with process_lock:
         return process_status.get(task_id)
+
+def _check_and_remove_failed_summaries(output_dir, failure_marker, content_hashes):
+    """
+    检查并删除包含失败标识的总结文件
+    
+    Args:
+        output_dir: 总结输出目录
+        failure_marker: 失败标识文本
+        content_hashes: 内容哈希字典
+        
+    Returns:
+        removed_files: 被删除的文件列表
+    """
+    removed_files = []
+    
+    try:
+        # 遍历总结输出目录
+        for filename in os.listdir(output_dir):
+            if filename.endswith('_summary.txt'):
+                file_path = os.path.join(output_dir, filename)
+                try:
+                    # 读取文件内容
+                    content = file_utils.read_file(file_path)
+                    
+                    # 检查是否包含失败标识（区分大小写的包含匹配）
+                    if failure_marker in content:
+                        # 删除文件
+                        os.remove(file_path)
+                        removed_files.append(filename)
+                        logging.info(f"删除包含失败标识的总结文件: {filename}")
+                        
+                        # 保留content_hashes条目（用于增量跳过）
+                        # 不删除哈希记录，这样下次处理时可以跳过该文件
+                
+                except Exception as e:
+                    logging.error(f"检查总结文件失败: {file_path}, 错误: {str(e)}")
+    
+    except Exception as e:
+        logging.error(f"检查失败文件时发生错误: {str(e)}")
+    
+    return removed_files

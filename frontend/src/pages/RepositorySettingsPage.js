@@ -29,7 +29,9 @@ import {
   getRepositoryPromptConfig,
   updateRepositoryPromptConfig,
   resetRepositoryPromptConfig,
-  syncRepositoryPromptConfigFromGlobal
+  syncRepositoryPromptConfigFromGlobal,
+  getPartialSyncConfig,
+  setPartialSyncConfig
 } from '../services/api';
 
 const { Title, Text, Paragraph } = Typography;
@@ -61,6 +63,8 @@ const RepositorySettingsPage = () => {
   const [promptConfig, setPromptConfig] = useState({});
   const [promptForm] = Form.useForm();
   const [promptLoading, setPromptLoading] = useState(false);
+  const [partialSyncConfig, setPartialSyncConfigState] = useState({});
+  const [partialSyncForm] = Form.useForm();
 
   // 获取信息库信息
   const fetchRepository = async () => {
@@ -119,10 +123,24 @@ const RepositorySettingsPage = () => {
     }
   };
 
+  // 获取部分同步配置
+  const fetchPartialSyncConfig = async () => {
+    try {
+      const response = await getPartialSyncConfig(id);
+      if (response.success) {
+        setPartialSyncConfigState(response.config || {});
+        partialSyncForm.setFieldsValue(response.config || {});
+      }
+    } catch (error) {
+      console.error('获取部分同步配置失败:', error);
+    }
+  };
+
   useEffect(() => {
     fetchRepository();
     fetchFileTypeMapping();
     fetchPromptConfig();
+    fetchPartialSyncConfig();
   }, [id]);
 
   // 保存基本设置
@@ -595,16 +613,64 @@ const RepositorySettingsPage = () => {
     try {
       const response = await syncRepositoryPromptConfigFromGlobal(id);
       if (response.success) {
-        message.success('已从全局配置同步Prompt设置');
-        setPromptConfig(response.prompt_config);
-        promptForm.setFieldsValue(response.prompt_config);
+        message.success('已同步全局配置');
+        setPromptConfig(response.prompt_config || {});
+        promptForm.setFieldsValue(response.prompt_config || {});
       } else {
-        message.error(`同步失败: ${response.error || '未知错误'}`);
+        message.error(`同步全局配置失败: ${response.error || '未知错误'}`);
       }
     } catch (error) {
-      message.error(`同步失败: ${error.error || '未知错误'}`);
+      message.error(`同步全局配置失败: ${error.error || '未知错误'}`);
     } finally {
       setPromptLoading(false);
+    }
+  };
+
+  // 设置部分同步配置
+  const handleSetPartialSyncConfig = async (values) => {
+    console.log('handleSetPartialSyncConfig 被调用，传入参数:', values);
+    console.log('当前信息库ID:', id);
+    console.log('当前信息库信息:', repository);
+    
+    setSaving(true);
+    try {
+      console.log('准备调用API，数据:', values);
+      const response = await setPartialSyncConfig(id, values);
+      console.log('API响应:', response);
+      
+      if (response && response.success) {
+        message.success('部分同步配置已保存');
+        setRepository(response.repository);
+        setPartialSyncConfigState(values);
+        console.log('配置保存成功');
+      } else {
+        console.error('API返回失败:', response);
+        message.error(`保存部分同步配置失败: ${response?.error || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('请求失败，完整错误对象:', error);
+      console.error('错误类型:', typeof error);
+      console.error('错误属性:', Object.keys(error));
+      
+      let errorMessage = '未知错误';
+      if (error && error.error) {
+        // 处理axios拦截器包装的错误
+        errorMessage = error.error;
+      } else if (error && error.response && error.response.data) {
+        // 处理原始HTTP错误
+        errorMessage = error.response.data.error || `HTTP ${error.response.status} 错误`;
+      } else if (error && error.message) {
+        // 处理标准JavaScript错误
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        // 处理字符串错误
+        errorMessage = error;
+      }
+      
+      console.error('最终错误信息:', errorMessage);
+      message.error(`保存部分同步配置失败: ${errorMessage}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1037,6 +1103,91 @@ const RepositorySettingsPage = () => {
                   loading={promptLoading}
                 >
                   保存Prompt配置
+                </Button>
+              </div>
+            </Form>
+          </Card>
+        </TabPane>
+
+        <TabPane tab={<span><SyncOutlined />部分同步</span>} key="7">
+          <Card className="flat-card">
+            <div style={{ marginBottom: 16 }}>
+              <Title level={5}>部分同步模式</Title>
+              <Text type="secondary">
+                启用部分同步模式后，系统会在总结生成完成时自动检查并删除包含失败标识的总结文件，
+                同时保留content_hashes条目以实现增量跳过。在此模式下，基于原始文件的问答对生成功能将被禁用。
+              </Text>
+            </div>
+
+            <Form
+              form={partialSyncForm}
+              layout="vertical"
+              onFinish={handleSetPartialSyncConfig}
+              initialValues={{
+                partial_sync_enabled: partialSyncConfig?.partial_sync_enabled ?? repository?.partial_sync_enabled ?? false,
+                failure_marker: partialSyncConfig?.failure_marker ?? repository?.failure_marker ?? '对不起，文件内容异常，我无法完成总结任务'
+              }}
+            >
+              <Form.Item
+                name="partial_sync_enabled"
+                valuePropName="checked"
+                label="启用部分同步模式"
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item
+                shouldUpdate={(prevValues, currentValues) => prevValues.partial_sync_enabled !== currentValues.partial_sync_enabled}
+                noStyle
+              >
+                {({ getFieldValue }) => (
+                  <Form.Item
+                    name="failure_marker"
+                    label="失败标识文本"
+                    rules={[
+                      {
+                        required: getFieldValue('partial_sync_enabled'),
+                        message: '请输入失败标识文本'
+                      }
+                    ]}
+                    tooltip="系统将检查总结文件中是否包含此文本（区分大小写），如果包含则删除该文件"
+                  >
+                    <TextArea 
+                      rows={3} 
+                      disabled={!getFieldValue('partial_sync_enabled')}
+                      placeholder="请输入用于识别失败总结的标识文本"
+                    />
+                  </Form.Item>
+                )}
+              </Form.Item>
+
+              <Alert
+                message="部分同步模式说明"
+                description={
+                  <div>
+                    <p><strong>功能说明：</strong></p>
+                    <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
+                      <li>在总结生成任务完成后，系统会统一检查所有总结文件</li>
+                      <li>删除包含失败标识的总结文件，但保留content_hashes条目</li>
+                      <li>下次处理时会跳过已有哈希记录的文件，实现增量处理</li>
+                      <li>禁用"基于原始文件生成问答对"功能</li>
+                      <li>爬虫来源的信息库默认开启，上传来源的信息库默认关闭</li>
+                    </ul>
+                  </div>
+                }
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+
+              <div style={{ textAlign: 'right' }}>
+                <Button 
+                  type="primary" 
+                  htmlType="submit" 
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                >
+                  保存设置
                 </Button>
               </div>
             </Form>

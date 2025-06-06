@@ -160,6 +160,9 @@ def _load_repositories():
                 repo_config.setdefault('token_count_jina', 0)
                 repo_config.setdefault('token_count_gpt4o', 0)
                 repo_config.setdefault('token_count_deepseek', 0)
+                # 设置部分同步模式的默认值
+                repo_config.setdefault('partial_sync_enabled', False)  # 现有信息库默认关闭
+                repo_config.setdefault('failure_marker', '对不起，文件内容异常，我无法完成总结任务')
             else:
                 # 创建默认配置
                 repo_config = {
@@ -176,7 +179,10 @@ def _load_repositories():
                     'status': 'incomplete',
                     'token_count_jina': 0,
                     'token_count_gpt4o': 0,
-                    'token_count_deepseek': 0
+                    'token_count_deepseek': 0,
+                    # 部分同步模式设置：爬虫来源默认开启，上传来源默认关闭
+                    'partial_sync_enabled': False,
+                    'failure_marker': '对不起，文件内容异常，我无法完成总结任务'
                 }
 
                 # 保存配置
@@ -227,7 +233,10 @@ def create_repository(name, source='crawler', urls=None, config_override=None):
         'status': 'incomplete',
         'token_count_jina': 0,
         'token_count_gpt4o': 0,
-        'token_count_deepseek': 0
+        'token_count_deepseek': 0,
+        # 部分同步模式设置：爬虫来源默认开启，上传来源默认关闭
+        'partial_sync_enabled': source == 'crawler',
+        'failure_marker': '对不起，文件内容异常，我无法完成总结任务'
     }
 
     # 如果是爬虫来源，记录URL
@@ -993,8 +1002,8 @@ def get_merged_prompt_config(name, global_config=None):
     if global_config is None:
         # 从配置管理器获取全局配置
         try:
-            from ..config import config_manager
-            global_config = config_manager.get_config()
+            from ..utils.config_loader import get_config
+            global_config = get_config()
         except:
             global_config = {}
 
@@ -1017,12 +1026,138 @@ def get_merged_prompt_config(name, global_config=None):
     
     # 递归合并配置
     def merge_dict(base, override):
+        result = base.copy()
         for key, value in override.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                merge_dict(base[key], value)
+            if isinstance(value, dict) and key in result and isinstance(result[key], dict):
+                result[key] = merge_dict(result[key], value)
             else:
-                base[key] = value
+                result[key] = value
+        return result
+
+    return merge_dict(merged_config, repo_prompt_config)
+
+def set_partial_sync_config(name, partial_sync_enabled, failure_marker=None):
+    """
+    设置信息库的部分同步配置
+
+    Args:
+        name: 信息库名称
+        partial_sync_enabled: 是否启用部分同步模式
+        failure_marker: 失败标识文本（可选）
+
+    Returns:
+        repository: 更新后的信息库配置
+    """
+    logging.info(f"开始设置信息库部分同步配置: name={name}, partial_sync_enabled={partial_sync_enabled}, failure_marker={failure_marker}")
     
-    merge_dict(merged_config, repo_prompt_config)
+    # 参数验证
+    if not name or not isinstance(name, str):
+        logging.error(f"无效的信息库名称: {name}")
+        raise ValueError(f"无效的信息库名称: {name}")
     
-    return merged_config
+    if not isinstance(partial_sync_enabled, bool):
+        logging.error(f"partial_sync_enabled 必须是布尔值: {partial_sync_enabled} (类型: {type(partial_sync_enabled)})")
+        raise ValueError(f"partial_sync_enabled 必须是布尔值，当前类型: {type(partial_sync_enabled)}")
+    
+    if failure_marker is not None and not isinstance(failure_marker, str):
+        logging.error(f"failure_marker 必须是字符串: {failure_marker} (类型: {type(failure_marker)})")
+        raise ValueError(f"failure_marker 必须是字符串，当前类型: {type(failure_marker)}")
+    
+    if name not in repositories:
+        logging.error(f"信息库不存在: {name}, 可用信息库: {list(repositories.keys())}")
+        raise ValueError(f"信息库不存在: {name}")
+
+    try:
+        # 获取信息库配置
+        repository = repositories[name]
+        logging.info(f"成功获取信息库配置: {name}")
+
+        # 创建配置备份（用于回滚）
+        original_config = copy.deepcopy(repository)
+        
+        # 更新配置
+        repository['partial_sync_enabled'] = partial_sync_enabled
+        if failure_marker is not None:
+            repository['failure_marker'] = failure_marker
+        repository['updated_at'] = datetime.now().isoformat()
+        
+        logging.info(f"内存中配置已更新: partial_sync_enabled={partial_sync_enabled}")
+
+        # 确定配置文件路径
+        repository_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                     'data', 'crawled_data', name)
+        
+        logging.info(f"信息库目录路径: {repository_dir}")
+        
+        # 确保目录存在
+        if not os.path.exists(repository_dir):
+            logging.info(f"创建信息库目录: {repository_dir}")
+            try:
+                os.makedirs(repository_dir, exist_ok=True)
+            except Exception as dir_error:
+                logging.error(f"创建目录失败: {str(dir_error)}")
+                raise Exception(f"无法创建信息库目录: {str(dir_error)}")
+        
+        config_file = os.path.join(repository_dir, 'repository_config.json')
+        logging.info(f"配置文件路径: {config_file}")
+        
+        # 检查文件写入权限
+        try:
+            # 测试目录写入权限
+            test_file = os.path.join(repository_dir, '.write_test')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logging.info("目录写入权限检查通过")
+        except Exception as perm_error:
+            logging.error(f"目录写入权限检查失败: {str(perm_error)}")
+            raise Exception(f"目录没有写入权限: {str(perm_error)}")
+        
+        # 保存配置文件
+        try:
+            # 创建临时文件，确保原子性写入
+            temp_config_file = config_file + '.tmp'
+            with open(temp_config_file, 'w', encoding='utf-8') as f:
+                json.dump(repository, f, ensure_ascii=False, indent=2)
+            
+            # 原子性替换文件
+            import shutil
+            shutil.move(temp_config_file, config_file)
+            
+        except Exception as save_error:
+            logging.error(f"保存配置文件失败: {str(save_error)}")
+            # 回滚内存中的配置
+            repositories[name] = original_config
+            raise Exception(f"无法保存配置文件: {str(save_error)}")
+        
+        logging.info(f"成功保存配置文件: {config_file}")
+        logging.info(f"更新信息库部分同步配置成功: {name}, 启用: {partial_sync_enabled}")
+
+        return repository
+        
+    except Exception as e:
+        logging.error(f"设置信息库部分同步配置失败: {name}, 错误: {str(e)}")
+        logging.error(f"错误详情: {type(e).__name__}: {str(e)}")
+        import traceback
+        logging.error(f"完整错误堆栈: {traceback.format_exc()}")
+        raise
+
+def get_partial_sync_config(name):
+    """
+    获取信息库的部分同步配置
+
+    Args:
+        name: 信息库名称
+
+    Returns:
+        config: 部分同步配置
+    """
+    if name not in repositories:
+        raise ValueError(f"信息库不存在: {name}")
+
+    repository = repositories[name]
+    
+    return {
+        'partial_sync_enabled': repository.get('partial_sync_enabled', False),
+        'failure_marker': repository.get('failure_marker', '对不起，文件内容异常，我无法完成总结任务')
+    }

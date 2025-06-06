@@ -26,14 +26,18 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
+    console.log('API响应成功:', response.config.url, response.data);
     return response.data;
   },
   error => {
     // 统一处理错误
     let errorMessage = '请求失败';
+    console.error('API请求失败:', error.config?.url, error);
+    
     if (error.response) {
       // 服务器返回错误
       const { status, data } = error.response;
+      console.error('服务器错误响应:', status, data);
       if (data && data.error) {
         errorMessage = data.error;
       } else {
@@ -59,11 +63,16 @@ api.interceptors.response.use(
       }
     } else if (error.request) {
       // 请求发出但没有收到响应
-      errorMessage = '服务器无响应';
+      console.error('网络错误，无响应:', error.request);
+      errorMessage = '服务器无响应，请检查网络连接和服务器状态';
+    } else {
+      // 其他错误
+      console.error('请求配置错误:', error.message);
+      errorMessage = error.message || '请求配置错误';
     }
     
-    console.error('API请求错误:', errorMessage);
-    return Promise.reject({ error: errorMessage });
+    console.error('最终错误信息:', errorMessage);
+    return Promise.reject({ error: errorMessage, originalError: error });
   }
 );
 
@@ -256,6 +265,15 @@ export const resetRepositoryPromptConfig = async (repositoryName) => {
 
 export const syncRepositoryPromptConfigFromGlobal = async (repositoryName) => {
   return api.post(`/repository/${repositoryName}/prompt_config/sync_from_global`);
+};
+
+// 部分同步配置相关
+export const getPartialSyncConfig = async (name) => {
+  return api.get(`/repository/${name}/partial_sync`);
+};
+
+export const setPartialSyncConfig = async (name, data) => {
+  return api.put(`/repository/${name}/partial_sync`, data);
 };
 
 export default api;

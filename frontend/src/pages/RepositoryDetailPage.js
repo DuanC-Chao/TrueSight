@@ -25,7 +25,8 @@ import {
   calculateTokens,
   getProcessStatus,
   syncRepositoryWithRAGFlow,
-  checkRepositoryRAGFlowSync
+  checkRepositoryRAGFlowSync,
+  getPartialSyncConfig
 } from '../services/api';
 
 const { Title, Text } = Typography;
@@ -71,6 +72,9 @@ const RepositoryDetailPage = () => {
   // RAGFlow同步状态
   const [ragflowSyncStatus, setRagflowSyncStatus] = useState(null);
   const [ragflowSyncLoading, setRagflowSyncLoading] = useState(false);
+  
+  // 部分同步配置状态
+  const [partialSyncConfig, setPartialSyncConfig] = useState(null);
   
   // 统一的轮询管理
   const pollingIntervalRef = useRef(null);
@@ -146,6 +150,22 @@ const RepositoryDetailPage = () => {
     }
   };
 
+  // 获取部分同步配置
+  const fetchPartialSyncConfig = async () => {
+    if (!id) return;
+    
+    try {
+      const response = await getPartialSyncConfig(id);
+      if (response.success) {
+        setPartialSyncConfig(response.config || {});
+      } else {
+        console.error('获取部分同步配置失败:', response.error);
+      }
+    } catch (error) {
+      console.error('获取部分同步配置失败:', error);
+    }
+  };
+
   // 加载所有数据
   const loadAllData = async () => {
     setLoading(true);
@@ -153,6 +173,7 @@ const RepositoryDetailPage = () => {
     await fetchFiles();
     await fetchSummaryFiles();
     await fetchQAFiles();
+    await fetchPartialSyncConfig();
     setLoading(false);
   };
 
@@ -608,6 +629,11 @@ const RepositoryDetailPage = () => {
   const getSummaryStatusTag = () => {
     if (!files || !summaryFiles) return <Tag>未知</Tag>;
     
+    // 检查是否启用部分同步模式
+    if (partialSyncConfig && partialSyncConfig.partial_sync_enabled) {
+      return <Tag color="orange">部分同步模式</Tag>;
+    }
+    
     // 总结文件数量大于等于原始文件数量，则为"同步"
     const isSynced = summaryFiles.length >= files.length;
     
@@ -619,6 +645,11 @@ const RepositoryDetailPage = () => {
   // 获取问答对状态标签
   const getQAStatusTag = () => {
     if (!files || !qaFiles) return <Tag>未知</Tag>;
+    
+    // 检查是否启用部分同步模式
+    if (partialSyncConfig && partialSyncConfig.partial_sync_enabled) {
+      return <Tag color="orange">部分同步模式</Tag>;
+    }
     
     // 问答文件数量大于等于原始文件数量，则为"同步"
     const isSynced = qaFiles.length >= files.length;
@@ -1064,12 +1095,20 @@ const RepositoryDetailPage = () => {
             </>
           )}
           
-          <Tooltip title={crawlTaskId !== null && crawlStatus?.status === 'running' ? '爬取进行中，请等待爬取完成' : ''}>
+          <Tooltip title={
+            crawlTaskId !== null && crawlStatus?.status === 'running' ? '爬取进行中，请等待爬取完成' : 
+            (partialSyncConfig && partialSyncConfig.partial_sync_enabled) ? '部分同步模式下不可用' :
+            ''
+          }>
             <Button 
               icon={<QuestionCircleOutlined />} 
               onClick={handleGenerateQAFromOriginal}
               loading={qaTaskId !== null && qaStatus?.status === 'running'}
-              disabled={qaTaskId !== null || (crawlTaskId !== null && crawlStatus?.status === 'running')}
+              disabled={
+                qaTaskId !== null || 
+                (crawlTaskId !== null && crawlStatus?.status === 'running') ||
+                (partialSyncConfig && partialSyncConfig.partial_sync_enabled)
+              }
             >
               基于原始文件生成问答对
             </Button>
@@ -1105,8 +1144,7 @@ const RepositoryDetailPage = () => {
               loading={qaTaskId !== null && qaStatus?.status === 'running'}
               disabled={
                 qaTaskId !== null || 
-                (crawlTaskId !== null && crawlStatus?.status === 'running') ||
-                !(summaryFiles && files && summaryFiles.length >= files.length)
+                (crawlTaskId !== null && crawlStatus?.status === 'running')
               }
             >
               基于总结文件生成问答对

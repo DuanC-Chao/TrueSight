@@ -1033,26 +1033,89 @@ def set_repository_auto_update(name):
 
 @api_blueprint.route('/repository/<name>/direct_import', methods=['PUT'])
 def set_repository_direct_import(name):
-    """设置信息库直接入库"""
+    """设置信息库直接入库模式"""
     try:
         data = request.json
-        direct_import = data.get('direct_import', False)
+        direct_import = data.get('direct_import')
         
-        # 检查信息库是否存在
-        repository = repository_manager.get_repository(name)
-        if not repository:
-            return jsonify({'success': False, 'error': f"信息库不存在: {name}"}), 404
+        if direct_import is None:
+            return jsonify({'success': False, 'error': '缺少 直接入库 参数'}), 400
         
-        # 设置直接入库
-        updated_repository = repository_manager.set_direct_import(name, direct_import)
+        # 设置直接入库模式
+        repository = repository_manager.set_direct_import(name, direct_import)
         
         return jsonify({
             'success': True,
-            'repository': updated_repository
+            'repository': repository
         })
     
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
     except Exception as e:
-        logging.error(f"设置信息库直接入库失败: {str(e)}")
+        logging.error(f"设置信息库直接入库模式失败: {str(e)}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/partial_sync', methods=['PUT'])
+def set_repository_partial_sync(name):
+    """设置信息库部分同步配置"""
+    try:
+        logging.info(f"接收到设置部分同步配置请求: repository={name}")
+        
+        data = request.get_json(silent=True)
+        if not data:
+            logging.error("请求数据为空或无效的JSON格式")
+            return jsonify({'success': False, 'error': '请求数据为空或无效的JSON格式'}), 400
+            
+        logging.info(f"请求数据: {data}")
+        
+        partial_sync_enabled = data.get('partial_sync_enabled')
+        failure_marker = data.get('failure_marker')
+        
+        logging.info(f"解析参数: partial_sync_enabled={partial_sync_enabled}, failure_marker={failure_marker}")
+        
+        if partial_sync_enabled is None:
+            logging.error("缺少 partial_sync_enabled 参数")
+            return jsonify({'success': False, 'error': '缺少 partial_sync_enabled 参数'}), 400
+        
+        # 设置部分同步配置
+        logging.info(f"调用 repository_manager.set_partial_sync_config...")
+        repository = repository_manager.set_partial_sync_config(name, partial_sync_enabled, failure_marker)
+        logging.info(f"成功设置部分同步配置")
+        
+        return jsonify({
+            'success': True,
+            'repository': repository
+        })
+    
+    except ValueError as e:
+        logging.error(f"ValueError: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        logging.error(f"设置信息库部分同步配置失败: {str(e)}")
+        logging.error(f"异常类型: {type(e).__name__}")
+        logging.error(f"异常详情: {str(e)}")
+        import traceback
+        logging.error(f"完整错误堆栈: {traceback.format_exc()}")
+        error_logs.add_error_log('repository', str(e), name)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_blueprint.route('/repository/<name>/partial_sync', methods=['GET'])
+def get_repository_partial_sync(name):
+    """获取信息库部分同步配置"""
+    try:
+        # 获取部分同步配置
+        config = repository_manager.get_partial_sync_config(name)
+        
+        return jsonify({
+            'success': True,
+            'config': config
+        })
+    
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        logging.error(f"获取信息库部分同步配置失败: {str(e)}")
         error_logs.add_error_log('repository', str(e), name)
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -1289,7 +1352,7 @@ def upload_repository_files(name):
                             except:
                                 pass
                         continue
-                        
+                            
                 except Exception as process_error:
                     logging.error(f"处理文件 {file.filename} 失败: {str(process_error)}")
                     continue
