@@ -1377,5 +1377,53 @@
       "failed_files": 9,
       "total_qa_pairs": 229
     }
+  },
+  "summary_1749207733": {
+    "id": "summary_1749207733",
+    "type": "summary",
+    "repository_name": "test",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-06T19:02:13.118589",
+    "updated_at": "2025-06-06T19:02:13.140668",
+    "started_at": "2025-06-06T19:02:13.121515",
+    "completed_at": "2025-06-06T19:02:13.140667",
+    "error": null,
+    "result": {
+      "processed_files": 1,
+      "skipped_files": 1,
+      "new_files": 0,
+      "updated_files": 0,
+      "failed_files": 0
+    },
+    "metadata": {
+      "processed_files": 1,
+      "skipped_files": 1,
+      "new_files": 0,
+      "updated_files": 0,
+      "failed_files": 0
+    }
+  },
+  "token_1749207736": {
+    "id": "token_1749207736",
+    "type": "token",
+    "repository_name": "test",
+    "status": "completed",
+    "progress": 100,
+    "created_at": "2025-06-06T19:02:16.525202",
+    "updated_at": "2025-06-06T19:02:21.032742",
+    "started_at": "2025-06-06T19:02:16.529172",
+    "completed_at": "2025-06-06T19:02:21.032740",
+    "error": null,
+    "result": {
+      "token_counts": {
+        "token_count_gpt4o": 14140,
+        "token_count_deepseek": 12804,
+        "token_count_jina": 13759
+      }
+    },
+    "metadata": {
+      "processed_files": 1
+    }
   }
 }
